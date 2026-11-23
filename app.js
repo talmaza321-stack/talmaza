@@ -1074,7 +1074,7 @@ async function renderStudentQR() {
 
   try {
     await ensureScript(
-      "https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js",
+      "https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js",
       "QRCode",
     );
 
