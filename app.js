@@ -1080,15 +1080,23 @@ async function renderStudentQR() {
 
     const canvas = document.createElement("canvas");
 
-    await window.QRCode.toCanvas(
-      canvas,
-      `TALMAZA:${me.id}`,
-      {
-        width: 210,
-        margin: 1,
-        errorCorrectionLevel: "M",
-      },
-    );
+    const qrContainer = document.createElement("div");
+
+new window.QRCode(qrContainer, {
+  text: `TALMAZA:${me.id}`,
+  width: 210,
+  height: 210,
+  correctLevel: window.QRCode.CorrectLevel.M,
+});
+
+const qrImage = qrContainer.querySelector("img");
+const qrCanvas = qrContainer.querySelector("canvas");
+
+if (qrImage) {
+  canvas.replaceWith(qrImage);
+} else if (qrCanvas) {
+  canvas.replaceWith(qrCanvas);
+}
 
     el.replaceChildren(canvas);
 
