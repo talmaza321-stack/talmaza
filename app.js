@@ -11,8 +11,15 @@ const configured =
   SUPABASE_URL.startsWith("https://") &&
   !SUPABASE_ANON_KEY.startsWith("YOUR_");
 
+
 const db = configured
-  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+      },
+    })
   : null;
 
 // HELPERS
@@ -204,14 +211,52 @@ $("#loginForm").onsubmit = async (e) => {
   }
 };
 
-  await stopScanner();
+ 
+async function renderStudentQR() {
+  const el = $("#studentQR");
+  if (!el || !me) return;
 
-  await db.auth.signOut();
+  try {
+    await ensureScript(
+      "https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js",
+      "QRCode"
+    );
 
-  me = null;
+    el.innerHTML = "";
 
-  $("#shell").classList.add("hidden");
-  $("#login").classList.remove("hidden");
+    new window.QRCode(el, {
+      text: `TALMAZA:${me.id}`,
+      width: 210,
+      height: 210,
+      correctLevel: window.QRCode.CorrectLevel.M,
+    });
+
+    $("#downloadQR").onclick = () => {
+      const canvas = el.querySelector("canvas");
+      const img = el.querySelector("img");
+
+      const imageUrl = canvas
+        ? canvas.toDataURL("image/png")
+        : img?.src;
+
+      if (!imageUrl) {
+        toast("كود الحضور لسه بيتحمّل");
+        return;
+      }
+
+      const link = document.createElement("a");
+      link.href = imageUrl;
+      link.download = "كود-الحضور.png";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    };
+
+  } catch (e) {
+    console.error("QR error:", e);
+    el.textContent = "تعذر إنشاء كود الحضور: " + e.message;
+  }
+}
 
 // NAVIGATION
 function navItems() {
@@ -1114,35 +1159,53 @@ if (qrImage) {
 }
 
 // OFFLINE ATTENDANCE STORAGE
-const queueKey = () =>
-  `talmaza-attendance-${me?.id || "none"}`;
 
-function pendingQueue() {
+async function renderStudentQR() {
+  const el = $("#studentQR");
+  if (!el || !me) return;
+
   try {
-    const stored = JSON.parse(
-      localStorage.getItem(queueKey()) || "[]",
+    await ensureScript(
+      "https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js",
+      "QRCode"
     );
 
-    return Array.isArray(stored) ? stored : [];
-  } catch {
-    return [];
+    el.innerHTML = "";
+
+    new window.QRCode(el, {
+      text: `TALMAZA:${me.id}`,
+      width: 210,
+      height: 210,
+      correctLevel: window.QRCode.CorrectLevel.M,
+    });
+
+    $("#downloadQR").onclick = () => {
+      const canvas = el.querySelector("canvas");
+      const img = el.querySelector("img");
+
+      const imageUrl = canvas
+        ? canvas.toDataURL("image/png")
+        : img?.src;
+
+      if (!imageUrl) {
+        toast("كود الحضور لسه بيتحمّل");
+        return;
+      }
+
+      const link = document.createElement("a");
+      link.href = imageUrl;
+      link.download = "كود-الحضور.png";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    };
+
+  } catch (e) {
+    console.error("QR error:", e);
+    el.textContent = "تعذر إنشاء كود الحضور: " + e.message;
   }
 }
 
-function storeQueue(queue) {
-  localStorage.setItem(
-    queueKey(),
-    JSON.stringify(queue),
-  );
-}
-
-function cairoFriday() {
-  const date = today();
-
-  return (
-    new Date(`${date}T12:00:00Z`).getUTCDay() === 5
-  );
-}
 
 // QR SCANNER
 
