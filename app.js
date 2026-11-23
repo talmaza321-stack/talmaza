@@ -1,7 +1,6 @@
 
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 import { renderAccounts } from "./accounts.js";
-let scanner = null;
 
 // SUPABASE CONNECTION
 const SUPABASE_URL = "https://zacekktcxyvcpwsaxmfp.supabase.co";
@@ -10,7 +9,6 @@ const SUPABASE_ANON_KEY = "sb_publishable_1rM-kgZfUYBldq6LVlpmkA__JRtHKhA";
 const configured =
   SUPABASE_URL.startsWith("https://") &&
   !SUPABASE_ANON_KEY.startsWith("YOUR_");
-
 
 const db = configured
   ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
@@ -59,6 +57,10 @@ let questions = [];
 let answers = {};
 let reportRows = [];
 
+let scanner = null;
+let scanBusy = false;
+let syncingAttendance = false;
+
 const roles = {
   student: "طالب",
   owner: "مسؤول الفصل",
@@ -68,7 +70,7 @@ const roles = {
 const classes = {
   first: "أولى تلمذة",
   second: "تانية تلمذة",
-  third: "تالتة تلمذة"
+  third: "تالتة تلمذة",
 };
 
 const usernameEmail = (u) =>
@@ -92,21 +94,22 @@ const card = (body, cls = "") =>
 function classSelect(id, all = true) {
   return `
     <select id="${id}">
-      ${all
-      ? '<option value="all">كل الفصول</option>'
-      : ""
-    }
+      ${
+        all
+          ? '<option value="all">كل الفصول</option>'
+          : ""
+      }
       ${Object.entries(classes)
-      .map(
-        ([key, name]) =>
-          `<option value="${key}">${name}</option>`,
-      )
-      .join("")}
+        .map(
+          ([key, name]) =>
+            `<option value="${key}">${name}</option>`,
+        )
+        .join("")}
     </select>
   `;
 }
 
-// SUPABASE
+// SUPABASE DATA
 async function loadMe() {
   const {
     data: { user },
@@ -140,12 +143,13 @@ async function loadQuestions() {
 
 // AUTHENTICATION
 async function enter() {
-  me = await loadMe();
+  const profile = await loadMe();
 
-  if (!me) {
-    await db.auth.signOut();
+  if (!profile) {
     throw Error("الحساب ده مش متفعل. كلم المسؤول.");
   }
+
+  me = profile;
 
   await loadQuestions();
 
@@ -156,9 +160,9 @@ async function enter() {
     `أهلاً يا ${me.full_name}`;
 
   $("#roleLabel").textContent =
-    roles[me.role] +
+    (roles[me.role] || me.role) +
     (me.class_key
-      ? " • " + classes[me.class_key]
+      ? " • " + (classes[me.class_key] || "")
       : "");
 
   tab = "home";
@@ -166,97 +170,122 @@ async function enter() {
   await render();
 }
 
+// LOGIN
+const loginForm = $("#loginForm");
 
-$("#loginForm").onsubmit = async (e) => {
-  e.preventDefault();
+if (loginForm) {
+  loginForm.onsubmit = async (e) => {
+    e.preventDefault();
 
-  $("#loginError").textContent = "";
-
-  if (!configured) {
-    $("#loginError").textContent =
-      "Please configure Supabase first.";
-    return;
-  }
-
-  const username = $("#username").value.trim().toLowerCase();
-  const password = $("#password").value;
-
-  const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(username);
-  const isUsername = /^[a-z0-9_.-]{3,32}$/.test(username);
-
-  if (!isEmail && !isUsername) {
-    $("#loginError").textContent =
-      "Please enter a valid username or email address.";
-    return;
-  }
-
-  try {
-    const loginEmail = isEmail
-      ? username
-      : usernameEmail(username);
-
-    const { error } = await db.auth.signInWithPassword({
-      email: loginEmail,
-      password,
-    });
-
-    if (error) throw error;
-
-    await enter();
-  } catch (err) {
-    console.error("Login error:", err);
-
-    $("#loginError").textContent =
-      "تعذر تسجيل الدخول. تأكد من اسم المستخدم أو البريد الإلكتروني وكلمة المرور.";
-  }
-};
-
- 
-async function renderStudentQR() {
-  const el = $("#studentQR");
-  if (!el || !me) return;
-
-  try {
-    await ensureScript(
-      "https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js",
-      "QRCode"
+    const errorEl = $("#loginError");
+    const submitButton = loginForm.querySelector(
+      'button[type="submit"]',
     );
 
-    el.innerHTML = "";
+    errorEl.textContent = "";
 
-    new window.QRCode(el, {
-      text: `TALMAZA:${me.id}`,
-      width: 210,
-      height: 210,
-      correctLevel: window.QRCode.CorrectLevel.M,
-    });
+    if (!configured) {
+      errorEl.textContent =
+        "Please configure Supabase first.";
+      return;
+    }
 
-    $("#downloadQR").onclick = () => {
-      const canvas = el.querySelector("canvas");
-      const img = el.querySelector("img");
+    const username = $("#username")
+      .value.trim().toLowerCase();
 
-      const imageUrl = canvas
-        ? canvas.toDataURL("image/png")
-        : img?.src;
+    const password = $("#password").value;
 
-      if (!imageUrl) {
-        toast("كود الحضور لسه بيتحمّل");
-        return;
+    const isEmail =
+      /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(username);
+
+    const isUsername =
+      /^[a-z0-9_.-]{3,32}$/.test(username);
+
+    if (!isEmail && !isUsername) {
+      errorEl.textContent =
+        "Please enter a valid username or email address.";
+      return;
+    }
+
+    if (!password) {
+      errorEl.textContent =
+        "من فضلك اكتب كلمة السر";
+      return;
+    }
+
+    if (submitButton) {
+      submitButton.disabled = true;
+    }
+
+    try {
+      const loginEmail = isEmail
+        ? username
+        : usernameEmail(username);
+
+      const { error } =
+        await db.auth.signInWithPassword({
+          email: loginEmail,
+          password,
+        });
+
+      if (error) throw error;
+
+      await enter();
+
+    } catch (err) {
+      console.error("Login error:", err);
+
+      errorEl.textContent =
+        "تعذر تسجيل الدخول: " +
+        (err.message || "حاول مرة تانية");
+
+    } finally {
+      if (submitButton) {
+        submitButton.disabled = false;
       }
+    }
+  };
+}
 
-      const link = document.createElement("a");
-      link.href = imageUrl;
-      link.download = "كود-الحضور.png";
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-    };
+// LOGOUT
+async function logout() {
+  try {
+    await stopScanner();
+    await db.auth.signOut();
+
+    me = null;
+    questions = [];
+    answers = {};
+    tab = "home";
+
+    $("#shell").classList.add("hidden");
+    $("#login").classList.remove("hidden");
+
+    if ($("#password")) {
+      $("#password").value = "";
+    }
+
+    if ($("#loginError")) {
+      $("#loginError").textContent = "";
+    }
 
   } catch (e) {
-    console.error("QR error:", e);
-    el.textContent = "تعذر إنشاء كود الحضور: " + e.message;
+    console.error("Logout error:", e);
+    toast("حصلت مشكلة أثناء تسجيل الخروج");
   }
 }
+
+// Support common logout button IDs
+document.addEventListener("click", (e) => {
+  const button = e.target.closest(
+    "#logout, #logoutBtn, #signOut, #signOutBtn",
+  );
+
+  if (!button) return;
+
+  e.preventDefault();
+  logout();
+});
 
 // NAVIGATION
 function navItems() {
@@ -353,7 +382,10 @@ async function render() {
         await attendancePage(v);
         break;
     }
+
   } catch (e) {
+    console.error("Render error:", e);
+
     v.innerHTML = card(
       `حصلت مشكلة: ${esc(e.message)}`,
       "error",
@@ -421,8 +453,8 @@ async function home(v) {
       card(
         (sub || []).length
           ? sub
-            .map(
-              (s) => `
+              .map(
+                (s) => `
                   <div class="row item">
                     <div>
                       <b>${esc(s.submitted_on)}</b>
@@ -433,8 +465,8 @@ async function home(v) {
                     </span>
                   </div>
                 `,
-            )
-            .join("")
+              )
+              .join("")
           : '<div class="empty">لسه مفيش متابعة. يلا نبدأ!</div>',
       ) +
 
@@ -503,7 +535,14 @@ async function home(v) {
 
   if (subsError) throw subsError;
 
-  const count = (profiles || []).filter(
+  const visibleProfiles =
+    me.role === "main"
+      ? (profiles || [])
+      : (profiles || []).filter(
+          (p) => p.class_key === me.class_key,
+        );
+
+  const count = visibleProfiles.filter(
     (p) => p.role === "student",
   ).length;
 
@@ -517,10 +556,11 @@ async function home(v) {
         <div class="eyebrow">لوحة المتابعة</div>
         <h2>كل حاجة في مكان واحد.</h2>
         <p class="muted">
-          ${me.role === "main"
-        ? "تابع الفصول كلها وتحكم في النظام."
-        : "تابع طلبة فصلك واطبع تقاريرهم."
-      }
+          ${
+            me.role === "main"
+              ? "تابع الفصول كلها وتحكم في النظام."
+              : "تابع طلبة فصلك واطبع تقاريرهم."
+          }
         </p>
       `,
       "hero",
@@ -528,16 +568,16 @@ async function home(v) {
 
     `<div class="grid">
       ${card(
-      `<strong>${count}</strong>
+        `<strong>${count}</strong>
          <span class="tiny">طالب</span>`,
-      "stat",
-    )}
+        "stat",
+      )}
 
       ${card(
-      `<strong>${todayCount}</strong>
+        `<strong>${todayCount}</strong>
          <span class="tiny">متابعة النهارده</span>`,
-      "stat",
-    )}
+        "stat",
+      )}
     </div>` +
 
     card(`
@@ -599,43 +639,45 @@ async function form(v) {
 
     <div id="qs">
       ${activeQuestions
-      .map((q, index) =>
-        card(`
+        .map((q, index) =>
+          card(`
             <div class="question">
               <h3>
                 ${index + 1}. ${esc(q.title)}
               </h3>
 
               <div class="choices">
-                ${q.options
-            .map(
-              (option) => `
+                ${(q.options || [])
+                  .map(
+                    (option) => `
                       <button
                         type="button"
-                        class="choice ${answers[q.id] === option
-                  ? "selected"
-                  : ""
-                }"
+                        class="choice ${
+                          answers[q.id] === option
+                            ? "selected"
+                            : ""
+                        }"
                         data-q="${q.id}"
                         data-a="${esc(option)}"
                       >
                         ${esc(option)}
                       </button>
                     `,
-            )
-            .join("")}
+                  )
+                  .join("")}
               </div>
             </div>
           `),
-      )
-      .join("")}
+        )
+        .join("")}
     </div>
 
     <button class="primary full" id="save">
-      ${existing
-      ? "حدّث المتابعة"
-      : "احفظ المتابعة"
-    } ←
+      ${
+        existing
+          ? "حدّث المتابعة"
+          : "احفظ المتابعة"
+      } ←
     </button>
 
     <p class="tiny">
@@ -696,9 +738,12 @@ async function form(v) {
 
       tab = "home";
       await render();
+
     } catch (e) {
       toast(e.message);
-      $("#save").disabled = false;
+
+      const saveButton = $("#save");
+      if (saveButton) saveButton.disabled = false;
     }
   };
 }
@@ -757,7 +802,6 @@ async function history(v) {
 }
 
 // ACCOUNTS MANAGEMENT
-// The full implementation is now in accounts.js
 async function students(v) {
   return renderAccounts(v, {
     db,
@@ -788,13 +832,14 @@ async function reports(v) {
         <label>
           الفصل
 
-          ${allowed
-        ? classSelect("reportClass")
-        : `<input
+          ${
+            allowed
+              ? classSelect("reportClass")
+              : `<input
                    value="${esc(classes[me.class_key])}"
                    disabled
                  >`
-      }
+          }
         </label>
 
         <label>
@@ -886,9 +931,10 @@ async function reports(v) {
             </thead>
 
             <tbody>
-              ${reportRows
-          .map(
-            (r) => `
+              ${
+                reportRows
+                  .map(
+                    (r) => `
                       <tr>
                         <td>${esc(r.full_name)}</td>
                         <td>
@@ -898,14 +944,14 @@ async function reports(v) {
                         <td>${Number(r.total_points)}</td>
                       </tr>
                     `,
-          )
-          .join("") ||
-        `<tr>
+                  )
+                  .join("") ||
+                `<tr>
                    <td colspan="4">
                      مفيش بيانات
                    </td>
                  </tr>`
-        }
+              }
             </tbody>
           </table>
         </div>
@@ -913,6 +959,7 @@ async function reports(v) {
 
       $("#printReport").onclick = () =>
         window.print();
+
     } catch (e) {
       toast(e.message);
     }
@@ -962,9 +1009,9 @@ async function settings(v) {
           </div>
 
           <div class="stack" style="margin-top:12px">
-            ${q.options
-            .map(
-              (option) => `
+            ${(q.options || [])
+              .map(
+                (option) => `
                   <label>
                     ${esc(option)}
                     <input
@@ -978,8 +1025,8 @@ async function settings(v) {
                     >
                   </label>
                 `,
-            )
-            .join("")}
+              )
+              .join("")}
 
             <label>
               <input
@@ -999,12 +1046,14 @@ async function settings(v) {
       احفظ التعديلات ←
     </button>`;
 
-  const { data: attendanceSetting, error: settingError } =
-    await db
-      .from("attendance_settings")
-      .select("points")
-      .eq("id", 1)
-      .single();
+  const {
+    data: attendanceSetting,
+    error: settingError,
+  } = await db
+    .from("attendance_settings")
+    .select("points")
+    .eq("id", 1)
+    .single();
 
   if (settingError) throw settingError;
 
@@ -1082,40 +1131,70 @@ async function settings(v) {
       await loadQuestions();
 
       toast("الإعدادات اتحفظت");
+
     } catch (e) {
       toast(e.message);
+
     } finally {
       button.disabled = false;
     }
   };
 }
 
-// QR CODE LIBRARY
+// EXTERNAL SCRIPT LOADER
+const loadingScripts = new Map();
+
 async function ensureScript(url, globalName) {
   if (window[globalName]) return;
 
-  await new Promise((resolve, reject) => {
+  if (loadingScripts.has(url)) {
+    return loadingScripts.get(url);
+  }
+
+  const promise = new Promise((resolve, reject) => {
     const script = document.createElement("script");
 
     script.src = url;
-    script.onload = resolve;
+    script.async = true;
 
-    script.onerror = () =>
+    script.onload = () => {
+      if (window[globalName]) {
+        resolve();
+      } else {
+        reject(
+          Error("أداة الكود اتحملت لكن مش شغالة"),
+        );
+      }
+    };
+
+    script.onerror = () => {
+      script.remove();
+
       reject(
         Error(
-          "افتح الموقع بالنت مرة عشان نحمل أداة الكود",
+          "تعذر تحميل أداة الكود. تأكد من الاتصال بالإنترنت",
         ),
       );
+    };
 
     document.head.append(script);
   });
+
+  loadingScripts.set(url, promise);
+
+  try {
+    await promise;
+  } catch (e) {
+    loadingScripts.delete(url);
+    throw e;
+  }
 }
 
-// STUDENT QR
+// STUDENT QR CODE
 async function renderStudentQR() {
   const el = $("#studentQR");
 
-  if (!el) return;
+  if (!el || !me) return;
 
   try {
     await ensureScript(
@@ -1123,54 +1202,7 @@ async function renderStudentQR() {
       "QRCode",
     );
 
-    const canvas = document.createElement("canvas");
-
-    const qrContainer = document.createElement("div");
-
-new window.QRCode(qrContainer, {
-  text: `TALMAZA:${me.id}`,
-  width: 210,
-  height: 210,
-  correctLevel: window.QRCode.CorrectLevel.M,
-});
-
-const qrImage = qrContainer.querySelector("img");
-const qrCanvas = qrContainer.querySelector("canvas");
-
-if (qrImage) {
-  canvas.replaceWith(qrImage);
-} else if (qrCanvas) {
-  canvas.replaceWith(qrCanvas);
-}
-
-    el.replaceChildren(canvas);
-
-    $("#downloadQR").onclick = () => {
-      const link = document.createElement("a");
-
-      link.href = canvas.toDataURL("image/png");
-      link.download = "كود-الحضور.png";
-
-      link.click();
-    };
-  } catch (e) {
-    el.textContent = e.message;
-  }
-}
-
-// OFFLINE ATTENDANCE STORAGE
-
-async function renderStudentQR() {
-  const el = $("#studentQR");
-  if (!el || !me) return;
-
-  try {
-    await ensureScript(
-      "https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js",
-      "QRCode"
-    );
-
-    el.innerHTML = "";
+    el.replaceChildren();
 
     new window.QRCode(el, {
       text: `TALMAZA:${me.id}`,
@@ -1179,39 +1211,78 @@ async function renderStudentQR() {
       correctLevel: window.QRCode.CorrectLevel.M,
     });
 
-    $("#downloadQR").onclick = () => {
-      const canvas = el.querySelector("canvas");
-      const img = el.querySelector("img");
+    const downloadButton = $("#downloadQR");
 
-      const imageUrl = canvas
-        ? canvas.toDataURL("image/png")
-        : img?.src;
+    if (downloadButton) {
+      downloadButton.onclick = () => {
+        const canvas = el.querySelector("canvas");
+        const img = el.querySelector("img");
 
-      if (!imageUrl) {
-        toast("كود الحضور لسه بيتحمّل");
-        return;
-      }
+        let imageUrl = "";
 
-      const link = document.createElement("a");
-      link.href = imageUrl;
-      link.download = "كود-الحضور.png";
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-    };
+        if (canvas) {
+          imageUrl = canvas.toDataURL("image/png");
+        } else if (img) {
+          imageUrl = img.src;
+        }
+
+        if (!imageUrl) {
+          toast("كود الحضور لسه بيتحمّل");
+          return;
+        }
+
+        const link = document.createElement("a");
+
+        link.href = imageUrl;
+        link.download = "كود-الحضور.png";
+
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      };
+    }
 
   } catch (e) {
     console.error("QR error:", e);
-    el.textContent = "تعذر إنشاء كود الحضور: " + e.message;
+
+    el.textContent =
+      "تعذر إنشاء كود الحضور: " + e.message;
   }
 }
 
+// OFFLINE ATTENDANCE STORAGE
+const queueKey = () =>
+  `talmaza-attendance-${me?.id || "none"}`;
+
+function pendingQueue() {
+  try {
+    const stored = JSON.parse(
+      localStorage.getItem(queueKey()) || "[]",
+    );
+
+    return Array.isArray(stored) ? stored : [];
+
+  } catch {
+    return [];
+  }
+}
+
+function storeQueue(queue) {
+  localStorage.setItem(
+    queueKey(),
+    JSON.stringify(queue),
+  );
+}
+
+function cairoFriday() {
+  const date = today();
+
+  return (
+    new Date(`${date}T12:00:00Z`).getUTCDay() === 5
+  );
+}
 
 // QR SCANNER
-
-let scanBusy = false;
-let syncingAttendance = false;
-
 async function stopScanner() {
   if (!scanner) return;
 
@@ -1220,11 +1291,11 @@ async function stopScanner() {
 
   try {
     await current.stop();
-  } catch { }
+  } catch {}
 
   try {
     current.clear();
-  } catch { }
+  } catch {}
 }
 
 async function queueScan(raw) {
@@ -1284,8 +1355,10 @@ async function queueScan(raw) {
     if (navigator.onLine) {
       await syncAttendance();
     }
+
   } catch (e) {
     toast(e.message);
+
   } finally {
     setTimeout(() => {
       scanBusy = false;
@@ -1333,6 +1406,7 @@ async function syncAttendance() {
         if (error) throw error;
 
         successCount++;
+
       } catch (e) {
         remaining.push({
           ...item,
@@ -1356,6 +1430,7 @@ async function syncAttendance() {
         `${remaining.length} حضور لسه مستني المزامنة أو المراجعة`,
       );
     }
+
   } finally {
     syncingAttendance = false;
   }
@@ -1372,9 +1447,7 @@ function updatePendingUI() {
 
 // OWNER ATTENDANCE PAGE
 async function attendancePage(v) {
-  if (
-    !["owner", "main"].includes(me.role)
-  ) {
+  if (!["owner", "main"].includes(me.role)) {
     return;
   }
 
@@ -1466,9 +1539,12 @@ async function attendancePage(v) {
         },
         queueScan,
       );
+
     } catch (e) {
+      console.error("Scanner error:", e);
+
       toast(
-        "الكاميرا مش متاحة: افتح الموقع على HTTPS واسمح بالكاميرا",
+        "الكاميرا مش متاحة: تأكد من الاتصال والسماح بالكاميرا",
       );
 
       await stopScanner();
@@ -1494,8 +1570,7 @@ document.addEventListener("click", (e) => {
 
   if (!input) return;
 
-  const isHidden =
-    input.type === "password";
+  const isHidden = input.type === "password";
 
   input.type = isHidden
     ? "text"
@@ -1530,14 +1605,18 @@ if (
 ) {
   navigator.serviceWorker
     .register("./sw.js")
-    .catch(() => { });
+    .catch((e) => {
+      console.warn("Service worker:", e);
+    });
 }
 
 // APPLICATION INITIALIZATION
 (async () => {
   if (!configured) {
-    $("#loginError").textContent =
-      "الموقع جاهز للربط: حط رابط Supabase والمفتاح العام في app.js";
+    if ($("#loginError")) {
+      $("#loginError").textContent =
+        "الموقع جاهز للربط: حط رابط Supabase والمفتاح العام في app.js";
+    }
     return;
   }
 
@@ -1552,7 +1631,10 @@ if (
     if (session) {
       await enter();
     }
+
   } catch (e) {
+    console.error("Session restore error:", e);
+
     toast(
       "مقدرناش نفتح الحساب. جرّب تدخل تاني",
     );
