@@ -1,1 +1,28 @@
-{"name":"متابعتي","short_name":"متابعتي","lang":"ar","dir":"rtl","start_url":"./","display":"standalone","background_color":"#f5f5f5","theme_color":"#080808"}
+
+{
+  "name": "تلمذة",
+  "short_name": "تلمذة",
+  "description": "تطبيق المتابعة الروحية للطلبة",
+  "lang": "ar",
+  "dir": "rtl",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#080808",
+  "theme_color": "#080808",
+  "icons": [
+    {
+      "src": "./icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
