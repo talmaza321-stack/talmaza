@@ -18,8 +18,8 @@ const db = configured
       auth: {
         persistSession: true,
         autoRefreshToken: true,
-        detectSessionInUrl: true,
-      },
+        detectSessionInUrl: true
+      }
     })
   : null;
 
@@ -27,15 +27,15 @@ const db = configured
 // HELPERS
 // =====================================================
 
-const $ = (selector) => document.querySelector(selector);
+const $ = selector => document.querySelector(selector);
 
-const esc = (value) =>
-  String(value ?? "").replace(/[&<>"']/g, (char) => ({
+const esc = value =>
+  String(value ?? "").replace(/[&<>"']/g, char => ({
     "&": "&amp;",
     "<": "&lt;",
     ">": "&gt;",
     '"': "&quot;",
-    "'": "&#39;",
+    "'": "&#39;"
   })[char]);
 
 function today() {
@@ -43,22 +43,20 @@ function today() {
     timeZone: "Africa/Cairo",
     year: "numeric",
     month: "2-digit",
-    day: "2-digit",
+    day: "2-digit"
   }).formatToParts(new Date());
 
-  const get = (type) =>
-    parts.find((part) => part.type === type)?.value;
+  const get = type =>
+    parts.find(part => part.type === type)?.value;
 
   return `${get("year")}-${get("month")}-${get("day")}`;
 }
 
 function cairoFriday() {
-  const weekday = new Intl.DateTimeFormat("en-US", {
+  return new Intl.DateTimeFormat("en-US", {
     timeZone: "Africa/Cairo",
-    weekday: "long",
-  }).format(new Date());
-
-  return weekday === "Friday";
+    weekday: "long"
+  }).format(new Date()) === "Friday";
 }
 
 function number(value) {
@@ -77,12 +75,9 @@ function classSelect(id, all = true) {
   return `
     <select id="${id}">
       ${all ? '<option value="all">كل الفصول</option>' : ""}
-      ${Object.entries(classes)
-        .map(
-          ([key, name]) =>
-            `<option value="${key}">${name}</option>`,
-        )
-        .join("")}
+      ${Object.entries(classes).map(([key, name]) =>
+        `<option value="${key}">${name}</option>`
+      ).join("")}
     </select>
   `;
 }
@@ -115,7 +110,6 @@ function checkResult(result) {
 let me = null;
 let tab = "home";
 let questions = [];
-let answers = [];
 let reportRows = [];
 
 let scanner = null;
@@ -126,16 +120,16 @@ let renderVersion = 0;
 const roles = {
   student: "طالب",
   owner: "مسؤول الفصل",
-  main: "المدير الرئيسي",
+  main: "المدير الرئيسي"
 };
 
 const classes = {
   first: "أولى تلمذة",
   second: "تانية تلمذة",
-  third: "تالتة تلمذة",
+  third: "تالتة تلمذة"
 };
 
-const usernameEmail = (username) =>
+const usernameEmail = username =>
   `${username.toLowerCase()}@accounts.motabaati.invalid`;
 
 // =====================================================
@@ -145,7 +139,7 @@ const usernameEmail = (username) =>
 async function loadMe() {
   const {
     data: { user },
-    error,
+    error
   } = await db.auth.getUser();
 
   if (error) throw error;
@@ -156,19 +150,17 @@ async function loadMe() {
       .from("profiles")
       .select("*")
       .eq("id", user.id)
-      .single(),
+      .single()
   );
 }
 
 async function loadQuestions() {
-  const data = checkResult(
+  questions = checkResult(
     await db
       .from("questions")
       .select("*")
-      .order("sort_order"),
-  );
-
-  questions = data || [];
+      .order("sort_order")
+  ) || [];
 }
 
 // =====================================================
@@ -176,10 +168,9 @@ async function loadQuestions() {
 // =====================================================
 
 async function enter() {
-  // Load profile and questions together.
   const [profile, questionResult] = await Promise.all([
     loadMe(),
-    db.from("questions").select("*").order("sort_order"),
+    db.from("questions").select("*").order("sort_order")
   ]);
 
   if (!profile) {
@@ -201,19 +192,18 @@ async function enter() {
       : "");
 
   tab = "home";
-
   await render();
 }
 
 const loginForm = $("#loginForm");
 
 if (loginForm) {
-  loginForm.onsubmit = async (event) => {
+  loginForm.onsubmit = async event => {
     event.preventDefault();
 
     const errorElement = $("#loginError");
     const submitButton = loginForm.querySelector(
-      'button[type="submit"]',
+      'button[type="submit"]'
     );
 
     errorElement.textContent = "";
@@ -253,7 +243,7 @@ if (loginForm) {
 
       const { error } = await db.auth.signInWithPassword({
         email,
-        password,
+        password
       });
 
       if (error) throw error;
@@ -279,7 +269,6 @@ async function logout() {
     renderVersion++;
     me = null;
     questions = [];
-    answers = [];
     reportRows = [];
     tab = "home";
 
@@ -294,9 +283,9 @@ async function logout() {
   }
 }
 
-document.addEventListener("click", (event) => {
+document.addEventListener("click", event => {
   const button = event.target.closest(
-    "#logout, #logoutBtn, #signOut, #signOutBtn",
+    "#logout, #logoutBtn, #signOut, #signOutBtn"
   );
 
   if (!button) return;
@@ -314,7 +303,7 @@ function navItems() {
     return [
       ["home", "⌂", "الرئيسية"],
       ["form", "▤", "المتابعة"],
-      ["history", "◷", "نشاطي"],
+      ["history", "◷", "نشاطي"]
     ];
   }
 
@@ -323,7 +312,7 @@ function navItems() {
       ["home", "⌂", "الرئيسية"],
       ["students", "♙", "الطلبة"],
       ["reports", "▤", "التقارير"],
-      ["attendance", "▦", "الحضور"],
+      ["attendance", "▦", "الحضور"]
     ];
   }
 
@@ -332,7 +321,7 @@ function navItems() {
     ["students", "♙", "الحسابات"],
     ["reports", "▤", "التقارير"],
     ["settings", "⚙", "الإعدادات"],
-    ["attendance", "▦", "الحضور"],
+    ["attendance", "▦", "الحضور"]
   ];
 }
 
@@ -356,21 +345,17 @@ async function render() {
     tab = "home";
   }
 
-  $("#nav").innerHTML = nav
-    .map(
-      ([key, icon, name]) => `
-        <button
-          class="nav-btn ${tab === key ? "active" : ""}"
-          data-tab="${key}"
-        >
-          <span class="symbol">${icon}</span>
-          ${name}
-        </button>
-      `,
-    )
-    .join("");
+  $("#nav").innerHTML = nav.map(([key, icon, name]) => `
+    <button
+      class="nav-btn ${tab === key ? "active" : ""}"
+      data-tab="${key}"
+    >
+      <span class="symbol">${icon}</span>
+      ${name}
+    </button>
+  `).join("");
 
-  $("#nav").querySelectorAll("button").forEach((button) => {
+  $("#nav").querySelectorAll("button").forEach(button => {
     button.onclick = () => navigate(button.dataset.tab);
   });
 
@@ -384,27 +369,21 @@ async function render() {
       case "home":
         await home(view, version);
         break;
-
       case "form":
-        await form(view);
+        await form(view, version);
         break;
-
       case "history":
-        await history(view);
+        await history(view, version);
         break;
-
       case "students":
         await students(view);
         break;
-
       case "reports":
         await reports(view);
         break;
-
       case "settings":
-        await settings(view);
+        await settings(view, version);
         break;
-
       case "attendance":
         await attendancePage(view);
         break;
@@ -416,7 +395,7 @@ async function render() {
 
     view.innerHTML = card(
       `حصلت مشكلة: ${esc(error.message)}`,
-      "error",
+      "error"
     );
   }
 }
@@ -426,82 +405,119 @@ async function render() {
 // =====================================================
 
 async function studentHome(view, version) {
-  // Three requests execute in parallel.
-  const [recentResult, allResult, attendanceResult] =
-    await Promise.all([
-      db
-        .from("submissions")
-        .select("id,submitted_on,earned_points")
-        .eq("student_id", me.id)
-        .order("submitted_on", { ascending: false })
-        .limit(6),
+  const [
+    recentResult,
+    allResult,
+    attendanceResult,
+    adjustmentResult
+  ] = await Promise.all([
+    db
+      .from("submissions")
+      .select("id,submitted_on,earned_points")
+      .eq("student_id", me.id)
+      .order("submitted_on", { ascending: false })
+      .limit(6),
 
-      db
-        .from("submissions")
-        .select("earned_points")
-        .eq("student_id", me.id),
+    db
+      .from("submissions")
+      .select("earned_points")
+      .eq("student_id", me.id),
 
-      db
-        .from("attendance")
-        .select("points_awarded")
-        .eq("student_id", me.id),
-    ]);
+    db
+      .from("attendance")
+      .select("points_awarded")
+      .eq("student_id", me.id),
+
+    db
+      .from("point_adjustments")
+      .select("points,reason,created_at")
+      .eq("student_id", me.id)
+      .order("created_at", { ascending: false })
+  ]);
 
   const recent = checkResult(recentResult) || [];
   const all = checkResult(allResult) || [];
   const attendance = checkResult(attendanceResult) || [];
+  const adjustments = checkResult(adjustmentResult) || [];
 
   if (version !== renderVersion) return;
 
   const formPoints = all.reduce(
     (sum, item) => sum + number(item.earned_points),
-    0,
+    0
   );
 
   const attendancePoints = attendance.reduce(
     (sum, item) => sum + number(item.points_awarded),
-    0,
+    0
   );
 
-  const total = formPoints + attendancePoints;
+  const manualPoints = adjustments.reduce(
+    (sum, item) => sum + number(item.points),
+    0
+  );
+
+  const total =
+    formPoints + attendancePoints + manualPoints;
+
+  const recentActivity = [
+    ...recent.map(item => ({
+      date: item.submitted_on,
+      timestamp: `${item.submitted_on}T12:00:00`,
+      title: "متابعة اليوم",
+      points: number(item.earned_points)
+    })),
+
+    ...adjustments.map(item => ({
+      date: new Date(item.created_at).toLocaleDateString(
+        "ar-EG",
+        { timeZone: "Africa/Cairo" }
+      ),
+      timestamp: item.created_at,
+      title: item.reason
+        ? `تعديل نقط: ${item.reason}`
+        : "تعديل نقط من المسؤول",
+      points: number(item.points)
+    }))
+  ]
+    .sort((a, b) =>
+      new Date(b.timestamp) - new Date(a.timestamp)
+    )
+    .slice(0, 6);
 
   view.innerHTML =
-    card(
-      `
-        <div class="eyebrow">مجموع نقطك</div>
+    card(`
+      <div class="eyebrow">مجموع نقطك</div>
 
-        <div class="big-number">
-          ${formatPoints(total)}
-        </div>
+      <div class="big-number">
+        ${formatPoints(total)}
+      </div>
 
-        <p class="muted">
-          كل يوم فرصة جديدة تعمل حاجة حلوة ✨
-        </p>
-      `,
-      "hero",
-    ) +
+      <p class="muted">
+        كل يوم فرصة جديدة تعمل حاجة حلوة ✨
+      </p>
+    `, "hero") +
 
     `<h3 class="section-title">آخر نشاط ليك</h3>` +
 
     card(
-      recent.length
-        ? recent
-            .map(
-              (submission) => `
-                <div class="row item">
-                  <div>
-                    <b>${esc(submission.submitted_on)}</b>
-                    <div class="tiny">متابعة اليوم</div>
-                  </div>
-
-                  <span class="pill">
-                    +${formatPoints(submission.earned_points)} نقطة
-                  </span>
+      recentActivity.length
+        ? recentActivity.map(item => `
+            <div class="row item">
+              <div>
+                <b>${esc(item.date)}</b>
+                <div class="tiny">
+                  ${esc(item.title)}
                 </div>
-              `,
-            )
-            .join("")
-        : '<div class="empty">لسه مفيش متابعة. يلا نبدأ!</div>',
+              </div>
+
+              <span class="pill">
+                ${item.points > 0 ? "+" : ""}
+                ${formatPoints(item.points)} نقطة
+              </span>
+            </div>
+          `).join("")
+        : '<div class="empty">لسه مفيش نشاط. يلا نبدأ!</div>'
     ) +
 
     `<h3 class="section-title">جبت نقطك إزاي؟</h3>` +
@@ -515,6 +531,14 @@ async function studentHome(view, version) {
       <div class="breakdown-row">
         <span>حضور الاجتماع</span>
         <b>${formatPoints(attendancePoints)} نقطة</b>
+      </div>
+
+      <div class="breakdown-row">
+        <span>تعديلات المسؤول</span>
+        <b>
+          ${manualPoints > 0 ? "+" : ""}
+          ${formatPoints(manualPoints)} نقطة
+        </b>
       </div>
     `) +
 
@@ -551,54 +575,49 @@ async function studentHome(view, version) {
 
   $("#goForm").onclick = () => navigate("form");
 
-  // QR generation no longer blocks homepage rendering.
   renderStudentQR(version);
 }
 
 // =====================================================
-// MAIN ADMIN / CLASS OWNER HOMEPAGE
+// MANAGEMENT HOMEPAGE
 // =====================================================
 
 async function managementHome(view, version) {
-  // Load profiles first, but count today's submissions
-  // only for the permitted student IDs.
-  const profilesResult = await db
-    .from("profiles")
-    .select("id,role,class_key");
-
-  const profiles = checkResult(profilesResult) || [];
+  const profiles = checkResult(
+    await db
+      .from("profiles")
+      .select("id,role,class_key")
+  ) || [];
 
   if (version !== renderVersion) return;
 
-  const students = profiles.filter(
-    (profile) =>
-      profile.role === "student" &&
-      (me.role === "main" ||
-        profile.class_key === me.class_key),
+  const students = profiles.filter(profile =>
+    profile.role === "student" &&
+    (
+      me.role === "main" ||
+      profile.class_key === me.class_key
+    )
   );
 
-  const studentIds = students.map((student) => student.id);
+  const studentIds = students.map(student => student.id);
 
   let todayCount = 0;
 
   if (studentIds.length) {
-    // Count only submissions belonging to visible students.
-    // Batches avoid very large URL filters.
-    const batchSize = 100;
     const batches = [];
 
-    for (let index = 0; index < studentIds.length; index += batchSize) {
-      batches.push(studentIds.slice(index, index + batchSize));
+    for (let i = 0; i < studentIds.length; i += 100) {
+      batches.push(studentIds.slice(i, i + 100));
     }
 
     const results = await Promise.all(
-      batches.map((ids) =>
+      batches.map(ids =>
         db
           .from("submissions")
           .select("id", { count: "exact", head: true })
           .eq("submitted_on", today())
-          .in("student_id", ids),
-      ),
+          .in("student_id", ids)
+      )
     );
 
     for (const result of results) {
@@ -610,39 +629,30 @@ async function managementHome(view, version) {
   if (version !== renderVersion) return;
 
   view.innerHTML =
-    card(
-      `
-        <div class="eyebrow">لوحة المتابعة</div>
+    card(`
+      <div class="eyebrow">لوحة المتابعة</div>
 
-        <h2>كل حاجة في مكان واحد.</h2>
+      <h2>كل حاجة في مكان واحد.</h2>
 
-        <p class="muted">
-          ${
-            me.role === "main"
-              ? "تابع الفصول كلها وتحكم في النظام."
-              : "تابع طلبة فصلك واطبع تقاريرهم."
-          }
-        </p>
-      `,
-      "hero",
-    ) +
+      <p class="muted">
+        ${
+          me.role === "main"
+            ? "تابع الفصول كلها وتحكم في النظام."
+            : "تابع طلبة فصلك واطبع تقاريرهم."
+        }
+      </p>
+    `, "hero") +
 
     `<div class="grid">
-      ${card(
-        `
-          <strong>${students.length}</strong>
-          <span class="tiny">طالب</span>
-        `,
-        "stat",
-      )}
+      ${card(`
+        <strong>${students.length}</strong>
+        <span class="tiny">طالب</span>
+      `, "stat")}
 
-      ${card(
-        `
-          <strong>${todayCount}</strong>
-          <span class="tiny">متابعة النهارده</span>
-        `,
-        "stat",
-      )}
+      ${card(`
+        <strong>${todayCount}</strong>
+        <span class="tiny">متابعة النهارده</span>
+      `, "stat")}
     </div>` +
 
     card(`
@@ -672,39 +682,40 @@ async function home(view, version) {
 // DAILY SPIRITUAL FOLLOW-UP
 // =====================================================
 
-async function form(view) {
+async function form(view, version) {
   if (me.role !== "student") return;
 
-  const existingResult = await db
-    .from("submissions")
-    .select("id")
-    .eq("student_id", me.id)
-    .eq("submitted_on", today())
-    .maybeSingle();
-
-  const existing = checkResult(existingResult);
+  const existing = checkResult(
+    await db
+      .from("submissions")
+      .select("id")
+      .eq("student_id", me.id)
+      .eq("submitted_on", today())
+      .maybeSingle()
+  );
 
   let oldAnswers = [];
 
   if (existing) {
-    oldAnswers =
-      checkResult(
-        await db
-          .from("submission_answers")
-          .select("question_id,answer")
-          .eq("submission_id", existing.id),
-      ) || [];
+    oldAnswers = checkResult(
+      await db
+        .from("submission_answers")
+        .select("question_id,answer")
+        .eq("submission_id", existing.id)
+    ) || [];
   }
 
+  if (version !== renderVersion) return;
+
   const selectedAnswers = Object.fromEntries(
-    oldAnswers.map((answer) => [
+    oldAnswers.map(answer => [
       answer.question_id,
-      answer.answer,
-    ]),
+      answer.answer
+    ])
   );
 
   const activeQuestions = questions.filter(
-    (question) => question.active,
+    question => question.active
   );
 
   view.innerHTML = `
@@ -715,38 +726,32 @@ async function form(view) {
     </p>
 
     <div id="qs">
-      ${activeQuestions
-        .map((question, index) =>
-          card(`
-            <div class="question">
-              <h3>
-                ${index + 1}. ${esc(question.title)}
-              </h3>
+      ${activeQuestions.map((question, index) =>
+        card(`
+          <div class="question">
+            <h3>
+              ${index + 1}. ${esc(question.title)}
+            </h3>
 
-              <div class="choices">
-                ${(question.options || [])
-                  .map(
-                    (option) => `
-                      <button
-                        type="button"
-                        class="choice ${
-                          selectedAnswers[question.id] === option
-                            ? "selected"
-                            : ""
-                        }"
-                        data-q="${esc(question.id)}"
-                        data-a="${esc(option)}"
-                      >
-                        ${esc(option)}
-                      </button>
-                    `,
-                  )
-                  .join("")}
-              </div>
+            <div class="choices">
+              ${(question.options || []).map(option => `
+                <button
+                  type="button"
+                  class="choice ${
+                    selectedAnswers[question.id] === option
+                      ? "selected"
+                      : ""
+                  }"
+                  data-q="${esc(question.id)}"
+                  data-a="${esc(option)}"
+                >
+                  ${esc(option)}
+                </button>
+              `).join("")}
             </div>
-          `),
-        )
-        .join("")}
+          </div>
+        `)
+      ).join("")}
     </div>
 
     <button class="primary full" id="save">
@@ -759,30 +764,27 @@ async function form(view) {
     </p>
   `;
 
-  $("#qs").onclick = (event) => {
+  $("#qs").onclick = event => {
     const button = event.target.closest("[data-q]");
     if (!button) return;
 
     const questionId = button.dataset.q;
-
     selectedAnswers[questionId] = button.dataset.a;
 
     document
       .querySelectorAll(`[data-q="${questionId}"]`)
-      .forEach((element) => {
+      .forEach(element => {
         element.classList.toggle(
           "selected",
-          element === button,
+          element === button
         );
       });
   };
 
   $("#save").onclick = async () => {
-    if (
-      activeQuestions.some(
-        (question) => !selectedAnswers[question.id],
-      )
-    ) {
+    if (activeQuestions.some(
+      question => !selectedAnswers[question.id]
+    )) {
       toast("جاوب على كل الأسئلة الأول");
       return;
     }
@@ -791,15 +793,15 @@ async function form(view) {
     button.disabled = true;
 
     try {
-      const payload = activeQuestions.map((question) => ({
+      const payload = activeQuestions.map(question => ({
         question_id: question.id,
-        answer: selectedAnswers[question.id],
+        answer: selectedAnswers[question.id]
       }));
 
       checkResult(
         await db.rpc("save_daily_submission", {
-          p_answers: payload,
-        }),
+          p_answers: payload
+        })
       );
 
       toast("اتحفظت متابعتك بنجاح ✨");
@@ -818,66 +820,115 @@ async function form(view) {
 // STUDENT HISTORY
 // =====================================================
 
-async function history(view) {
+async function history(view, version) {
   if (me.role !== "student") return;
 
-  const submissions =
-    checkResult(
-      await db
+  const [submissionsResult, adjustmentsResult] =
+    await Promise.all([
+      db
         .from("submissions")
         .select(
-          "id,submitted_on,earned_points,submission_answers(answer,question_id)",
+          "id,submitted_on,earned_points,submission_answers(answer,question_id)"
         )
         .eq("student_id", me.id)
         .order("submitted_on", { ascending: false })
         .limit(100),
-    ) || [];
+
+      db
+        .from("point_adjustments")
+        .select("points,reason,created_at")
+        .eq("student_id", me.id)
+        .order("created_at", { ascending: false })
+        .limit(100)
+    ]);
+
+  const submissions = checkResult(submissionsResult) || [];
+  const adjustments = checkResult(adjustmentsResult) || [];
+
+  if (version !== renderVersion) return;
 
   const questionMap = new Map(
-    questions.map((question) => [
+    questions.map(question => [
       String(question.id),
-      question.title,
-    ]),
+      question.title
+    ])
   );
 
-  view.innerHTML =
-    `<h2>نشاطي</h2>
-     <p class="muted">كل اللي سجلته قبل كده</p>` +
+  const submissionCards = submissions.map(submission =>
+    card(`
+      <div class="row">
+        <b>${esc(submission.submitted_on)}</b>
 
-    (submissions.length
-      ? submissions
-          .map((submission) =>
-            card(`
-              <div class="row">
-                <b>${esc(submission.submitted_on)}</b>
+        <span class="pill">
+          ${formatPoints(submission.earned_points)} نقطة
+        </span>
+      </div>
 
-                <span class="pill">
-                  ${formatPoints(submission.earned_points)} نقطة
-                </span>
-              </div>
+      <div class="space"></div>
 
-              <div class="space"></div>
+      ${(submission.submission_answers || []).map(answer => `
+        <div class="row item">
+          <span>
+            ${esc(
+              questionMap.get(String(answer.question_id)) ||
+              "سؤال"
+            )}
+          </span>
 
-              ${(submission.submission_answers || [])
-                .map(
-                  (answer) => `
-                    <div class="row item">
-                      <span>
-                        ${esc(
-                          questionMap.get(String(answer.question_id)) ||
-                            "سؤال",
-                        )}
-                      </span>
+          <b>${esc(answer.answer)}</b>
+        </div>
+      `).join("")}
+    `)
+  ).join("");
 
-                      <b>${esc(answer.answer)}</b>
-                    </div>
-                  `,
-                )
-                .join("")}
-            `),
-          )
-          .join("")
-      : card('<div class="empty">لسه مفيش نشاط</div>'));
+  const adjustmentCards = adjustments.map(item => {
+    const points = number(item.points);
+
+    const date = new Date(item.created_at)
+      .toLocaleString("ar-EG", {
+        timeZone: "Africa/Cairo"
+      });
+
+    return card(`
+      <div class="row">
+        <div>
+          <b>تعديل نقط من المسؤول</b>
+
+          <div class="tiny">
+            ${esc(date)}
+          </div>
+
+          ${item.reason ? `
+            <p class="muted">
+              ${esc(item.reason)}
+            </p>
+          ` : ""}
+        </div>
+
+        <span class="pill">
+          ${points > 0 ? "+" : ""}
+          ${formatPoints(points)} نقطة
+        </span>
+      </div>
+    `);
+  }).join("");
+
+  view.innerHTML = `
+    <h2>نشاطي</h2>
+    <p class="muted">كل اللي سجلته قبل كده</p>
+
+    <h3 class="section-title">المتابعات</h3>
+    ${
+      submissionCards ||
+      card('<div class="empty">لسه مفيش متابعة</div>')
+    }
+
+    <h3 class="section-title">تعديلات النقط</h3>
+    ${
+      adjustmentCards ||
+      card('<div class="empty">مفيش تعديلات نقط</div>')
+    }
+  `;
 }
 
 // =====================================================
@@ -895,7 +946,7 @@ async function students(view) {
     $,
     toast,
     render,
-    classSelect,
+    classSelect
   });
 }
 
@@ -978,8 +1029,8 @@ async function reports(view) {
         await db.rpc("class_report", {
           p_class: cls,
           p_from: from,
-          p_to: to,
-        }),
+          p_to: to
+        })
       );
 
       reportRows = data || [];
@@ -1020,21 +1071,17 @@ async function reports(view) {
 
             <tbody>
               ${
-                reportRows
-                  .map(
-                    (row) => `
-                      <tr>
-                        <td>${esc(row.full_name)}</td>
-                        <td>${esc(classes[row.class_key] || "")}</td>
-                        <td>${number(row.days_count)}</td>
-                        <td>${formatPoints(row.total_points)}</td>
-                      </tr>
-                    `,
-                  )
-                  .join("") ||
+                reportRows.map(row => `
+                  <tr>
+                    <td>${esc(row.full_name)}</td>
+                    <td>${esc(classes[row.class_key] || "")}</td>
+                    <td>${number(row.days_count)}</td>
+                    <td>${formatPoints(row.total_points)}</td>
+                  </tr>
+                `).join("") ||
                 `<tr>
-                   <td colspan="4">مفيش بيانات</td>
-                 </tr>`
+                  <td colspan="4">مفيش بيانات</td>
+                </tr>`
               }
             </tbody>
           </table>
@@ -1045,7 +1092,9 @@ async function reports(view) {
     } catch (error) {
       toast(error.message);
     } finally {
-      if ($("#loadReport")) $("#loadReport").disabled = false;
+      if ($("#loadReport")) {
+        $("#loadReport").disabled = false;
+      }
     }
   };
 }
@@ -1054,7 +1103,7 @@ async function reports(view) {
 // MAIN ADMIN SETTINGS
 // =====================================================
 
-async function settings(view) {
+async function settings(view, version) {
   if (me.role !== "main") return;
 
   view.innerHTML =
@@ -1086,52 +1135,46 @@ async function settings(view) {
       </p>
     `) +
 
-    questions
-      .map((question) =>
-        card(`
-          <div class="row">
-            <b>${esc(question.title)}</b>
+    questions.map(question =>
+      card(`
+        <div class="row">
+          <b>${esc(question.title)}</b>
 
-            <span class="pill">
-              ${question.active ? "مفعّل" : "متوقف"}
-            </span>
-          </div>
+          <span class="pill">
+            ${question.active ? "مفعّل" : "متوقف"}
+          </span>
+        </div>
 
-          <div class="stack" style="margin-top:12px">
-            ${(question.options || [])
-              .map(
-                (option) => `
-                  <label>
-                    ${esc(option)}
-
-                    <input
-                      type="number"
-                      min="0"
-                      max="10000"
-                      step="1"
-                      data-id="${esc(question.id)}"
-                      data-option="${esc(option)}"
-                      value="${number(question.points?.[option])}"
-                    >
-                  </label>
-                `,
-              )
-              .join("")}
-
+        <div class="stack" style="margin-top:12px">
+          ${(question.options || []).map(option => `
             <label>
-              <input
-                type="checkbox"
-                data-active="${esc(question.id)}"
-                ${question.active ? "checked" : ""}
-                style="width:auto;min-height:auto"
-              >
+              ${esc(option)}
 
-              السؤال ده يظهر للطلبة
+              <input
+                type="number"
+                min="0"
+                max="10000"
+                step="1"
+                data-id="${esc(question.id)}"
+                data-option="${esc(option)}"
+                value="${number(question.points?.[option])}"
+              >
             </label>
-          </div>
-        `),
-      )
-      .join("") +
+          `).join("")}
+
+          <label>
+            <input
+              type="checkbox"
+              data-active="${esc(question.id)}"
+              ${question.active ? "checked" : ""}
+              style="width:auto;min-height:auto"
+            >
+
+            السؤال ده يظهر للطلبة
+          </label>
+        </div>
+      `)
+    ).join("") +
 
     `<button class="primary full" id="saveSettings">
       احفظ التعديلات ←
@@ -1142,8 +1185,10 @@ async function settings(view) {
       .from("attendance_settings")
       .select("points")
       .eq("id", 1)
-      .single(),
+      .single()
   );
+
+  if (version !== renderVersion) return;
 
   if ($("#attendancePointsSetting")) {
     $("#attendancePointsSetting").value =
@@ -1156,7 +1201,7 @@ async function settings(view) {
 
     try {
       const attendanceValue = Number(
-        $("#attendancePointsSetting").value,
+        $("#attendancePointsSetting").value
       );
 
       if (
@@ -1167,12 +1212,12 @@ async function settings(view) {
         throw Error("راجع نقط الحضور");
       }
 
-      const updates = questions.map((question) => {
+      const updates = questions.map(question => {
         const points = {};
 
         document
           .querySelectorAll(`[data-id="${question.id}"]`)
-          .forEach((input) => {
+          .forEach(input => {
             const value = Number(input.value);
 
             if (
@@ -1182,7 +1227,7 @@ async function settings(view) {
               value > 10000
             ) {
               throw Error(
-                "النقط لازم تكون رقم صحيح بين ٠ و١٠٠٠٠",
+                "النقط لازم تكون رقم صحيح بين ٠ و١٠٠٠٠"
               );
             }
 
@@ -1190,13 +1235,13 @@ async function settings(view) {
           });
 
         const activeInput = document.querySelector(
-          `[data-active="${question.id}"]`,
+          `[data-active="${question.id}"]`
         );
 
         return {
           id: question.id,
           points,
-          active: !!activeInput?.checked,
+          active: !!activeInput?.checked
         };
       });
 
@@ -1204,19 +1249,18 @@ async function settings(view) {
         await db
           .from("attendance_settings")
           .update({ points: attendanceValue })
-          .eq("id", 1),
+          .eq("id", 1)
       );
 
-      // Keep updates sequential to preserve existing behavior.
       for (const update of updates) {
         checkResult(
           await db
             .from("questions")
             .update({
               points: update.points,
-              active: update.active,
+              active: update.active
             })
-            .eq("id", update.id),
+            .eq("id", update.id)
         );
       }
 
@@ -1263,8 +1307,8 @@ async function ensureScript(url, globalName) {
 
       reject(
         Error(
-          "تعذر تحميل أداة الكود. تأكد من الاتصال بالإنترنت",
-        ),
+          "تعذر تحميل أداة الكود. تأكد من الاتصال بالإنترنت"
+        )
       );
     };
 
@@ -1295,7 +1339,7 @@ async function renderStudentQR(version = renderVersion) {
   try {
     await ensureScript(
       "https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js",
-      "QRCode",
+      "QRCode"
     );
 
     if (
@@ -1318,7 +1362,7 @@ async function renderStudentQR(version = renderVersion) {
       text: `TALMAZA:${studentId}`,
       width: 210,
       height: 210,
-      correctLevel: window.QRCode.CorrectLevel.M,
+      correctLevel: window.QRCode.CorrectLevel.M
     });
 
     const downloadButton = $("#downloadQR");
@@ -1377,7 +1421,7 @@ const queueKey = () =>
 function pendingQueue() {
   try {
     const stored = JSON.parse(
-      localStorage.getItem(queueKey()) || "[]",
+      localStorage.getItem(queueKey()) || "[]"
     );
 
     return Array.isArray(stored) ? stored : [];
@@ -1389,7 +1433,7 @@ function pendingQueue() {
 function storeQueue(queue) {
   localStorage.setItem(
     queueKey(),
-    JSON.stringify(queue),
+    JSON.stringify(queue)
   );
 }
 
@@ -1433,7 +1477,7 @@ async function queueScan(raw) {
 
     const match =
       /^TALMAZA:([0-9a-f-]{36})$/i.exec(
-        String(raw).trim(),
+        String(raw).trim()
       );
 
     if (!match) {
@@ -1449,10 +1493,9 @@ async function queueScan(raw) {
 
     const queue = pendingQueue();
 
-    const duplicate = queue.some(
-      (item) =>
-        item.student_id === studentId &&
-        item.attended_on === date,
+    const duplicate = queue.some(item =>
+      item.student_id === studentId &&
+      item.attended_on === date
     );
 
     if (duplicate) {
@@ -1463,7 +1506,7 @@ async function queueScan(raw) {
     queue.push({
       student_id: studentId,
       attended_on: date,
-      client_recorded_at: new Date().toISOString(),
+      client_recorded_at: new Date().toISOString()
     });
 
     storeQueue(queue);
@@ -1472,7 +1515,6 @@ async function queueScan(raw) {
     updatePendingUI();
 
     if (navigator.onLine) {
-      // Sync in background; scanner remains responsive.
       syncAttendance();
     }
   } catch (error) {
@@ -1512,8 +1554,6 @@ async function syncAttendance() {
   let failedCount = 0;
 
   try {
-    // Process one item at a time so successful records
-    // can be removed immediately after server confirmation.
     for (const item of initialQueue) {
       try {
         checkResult(
@@ -1521,20 +1561,19 @@ async function syncAttendance() {
             p_student_id: item.student_id,
             p_attended_on: item.attended_on,
             p_client_recorded_at:
-              item.client_recorded_at,
-          }),
+              item.client_recorded_at
+          })
         );
 
         const currentQueue = pendingQueue();
 
-        const remaining = currentQueue.filter(
-          (queued) =>
-            !(
-              queued.student_id === item.student_id &&
-              queued.attended_on === item.attended_on &&
-              queued.client_recorded_at ===
-                item.client_recorded_at
-            ),
+        const remaining = currentQueue.filter(queued =>
+          !(
+            queued.student_id === item.student_id &&
+            queued.attended_on === item.attended_on &&
+            queued.client_recorded_at ===
+              item.client_recorded_at
+          )
         );
 
         storeQueue(remaining);
@@ -1544,13 +1583,13 @@ async function syncAttendance() {
 
         const currentQueue = pendingQueue();
 
-        const updated = currentQueue.map((queued) =>
+        const updated = currentQueue.map(queued =>
           queued.student_id === item.student_id &&
           queued.attended_on === item.attended_on &&
           queued.client_recorded_at ===
             item.client_recorded_at
             ? { ...queued, error: error.message }
-            : queued,
+            : queued
         );
 
         storeQueue(updated);
@@ -1565,7 +1604,7 @@ async function syncAttendance() {
 
     if (failedCount) {
       toast(
-        `${failedCount} حضور لسه مستني المزامنة أو المراجعة`,
+        `${failedCount} حضور لسه مستني المزامنة أو المراجعة`
       );
     }
   } finally {
@@ -1642,7 +1681,7 @@ async function attendancePage(view) {
     try {
       await ensureScript(
         "https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js",
-        "Html5Qrcode",
+        "Html5Qrcode"
       );
 
       if (scanner) return;
@@ -1655,16 +1694,16 @@ async function attendancePage(view) {
           fps: 10,
           qrbox: {
             width: 220,
-            height: 220,
-          },
+            height: 220
+          }
         },
-        queueScan,
+        queueScan
       );
     } catch (error) {
       console.error("Scanner error:", error);
 
       toast(
-        "الكاميرا مش متاحة: تأكد من الاتصال والسماح بالكاميرا",
+        "الكاميرا مش متاحة: تأكد من الاتصال والسماح بالكاميرا"
       );
 
       await stopScanner();
@@ -1684,15 +1723,15 @@ async function attendancePage(view) {
 // PASSWORD VISIBILITY
 // =====================================================
 
-document.addEventListener("click", (event) => {
+document.addEventListener("click", event => {
   const button = event.target.closest(
-    "[data-toggle-password]",
+    "[data-toggle-password]"
   );
 
   if (!button) return;
 
   const input = document.getElementById(
-    button.dataset.togglePassword,
+    button.dataset.togglePassword
   );
 
   if (!input) return;
@@ -1703,7 +1742,7 @@ document.addEventListener("click", (event) => {
 
   button.setAttribute(
     "aria-label",
-    isHidden ? "إخفاء كلمة السر" : "إظهار كلمة السر",
+    isHidden ? "إخفاء كلمة السر" : "إظهار كلمة السر"
   );
 
   button.textContent = isHidden ? "◌" : "◉";
@@ -1729,7 +1768,7 @@ if (
 ) {
   navigator.serviceWorker
     .register("./sw.js")
-    .catch((error) => {
+    .catch(error => {
       console.warn("Service worker:", error);
     });
 }
@@ -1750,7 +1789,7 @@ if (
   try {
     const {
       data: { session },
-      error,
+      error
     } = await db.auth.getSession();
 
     if (error) throw error;
