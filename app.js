@@ -2,7 +2,10 @@
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 import { renderAccounts } from "./accounts.js";
 
+// =====================================================
 // SUPABASE CONNECTION
+// =====================================================
+
 const SUPABASE_URL = "https://zacekktcxyvcpwsaxmfp.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_1rM-kgZfUYBldq6LVlpmkA__JRtHKhA";
 
@@ -20,23 +23,22 @@ const db = configured
     })
   : null;
 
+// =====================================================
 // HELPERS
-const $ = (s) => document.querySelector(s);
+// =====================================================
 
-const esc = (s) =>
-  String(s ?? "").replace(
-    /[&<>"']/g,
-    (c) =>
-      ({
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#39;",
-      })[c],
-  );
+const $ = (selector) => document.querySelector(selector);
 
-const today = () => {
+const esc = (value) =>
+  String(value ?? "").replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[char]);
+
+function today() {
   const parts = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Africa/Cairo",
     year: "numeric",
@@ -45,21 +47,81 @@ const today = () => {
   }).formatToParts(new Date());
 
   const get = (type) =>
-    parts.find((p) => p.type === type)?.value;
+    parts.find((part) => part.type === type)?.value;
 
   return `${get("year")}-${get("month")}-${get("day")}`;
-};
+}
 
+function cairoFriday() {
+  const weekday = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Africa/Cairo",
+    weekday: "long",
+  }).format(new Date());
+
+  return weekday === "Friday";
+}
+
+function number(value) {
+  return Number(value || 0);
+}
+
+function formatPoints(value) {
+  return number(value).toLocaleString("ar-EG");
+}
+
+function card(body, cls = "") {
+  return `<section class="card ${cls}">${body}</section>`;
+}
+
+function classSelect(id, all = true) {
+  return `
+    <select id="${id}">
+      ${all ? '<option value="all">كل الفصول</option>' : ""}
+      ${Object.entries(classes)
+        .map(
+          ([key, name]) =>
+            `<option value="${key}">${name}</option>`,
+        )
+        .join("")}
+    </select>
+  `;
+}
+
+let toastTimer = null;
+
+function toast(message) {
+  const element = $("#toast");
+  if (!element) return;
+
+  element.textContent = String(message);
+  element.style.display = "block";
+
+  clearTimeout(toastTimer);
+
+  toastTimer = setTimeout(() => {
+    element.style.display = "none";
+  }, 3500);
+}
+
+function checkResult(result) {
+  if (result.error) throw result.error;
+  return result.data;
+}
+
+// =====================================================
 // APPLICATION STATE
+// =====================================================
+
 let me = null;
 let tab = "home";
 let questions = [];
-let answers = {};
+let answers = [];
 let reportRows = [];
 
 let scanner = null;
 let scanBusy = false;
 let syncingAttendance = false;
+let renderVersion = 0;
 
 const roles = {
   student: "طالب",
@@ -73,91 +135,64 @@ const classes = {
   third: "تالتة تلمذة",
 };
 
-const usernameEmail = (u) =>
-  `${u.toLowerCase()}@accounts.motabaati.invalid`;
+const usernameEmail = (username) =>
+  `${username.toLowerCase()}@accounts.motabaati.invalid`;
 
-function toast(message) {
-  const el = $("#toast");
-  if (!el) return;
+// =====================================================
+// DATA LOADING
+// =====================================================
 
-  el.textContent = message;
-  el.style.display = "block";
-
-  setTimeout(() => {
-    el.style.display = "none";
-  }, 3200);
-}
-
-const card = (body, cls = "") =>
-  `<section class="card ${cls}">${body}</section>`;
-
-function classSelect(id, all = true) {
-  return `
-    <select id="${id}">
-      ${
-        all
-          ? '<option value="all">كل الفصول</option>'
-          : ""
-      }
-      ${Object.entries(classes)
-        .map(
-          ([key, name]) =>
-            `<option value="${key}">${name}</option>`,
-        )
-        .join("")}
-    </select>
-  `;
-}
-
-// SUPABASE DATA
 async function loadMe() {
   const {
     data: { user },
-    error: authError,
+    error,
   } = await db.auth.getUser();
 
-  if (authError) throw authError;
+  if (error) throw error;
   if (!user) return null;
 
-  const { data, error } = await db
-    .from("profiles")
-    .select("*")
-    .eq("id", user.id)
-    .single();
-
-  if (error) throw error;
-
-  return data;
+  return checkResult(
+    await db
+      .from("profiles")
+      .select("*")
+      .eq("id", user.id)
+      .single(),
+  );
 }
 
 async function loadQuestions() {
-  const { data, error } = await db
-    .from("questions")
-    .select("*")
-    .order("sort_order");
-
-  if (error) throw error;
+  const data = checkResult(
+    await db
+      .from("questions")
+      .select("*")
+      .order("sort_order"),
+  );
 
   questions = data || [];
 }
 
+// =====================================================
 // AUTHENTICATION
+// =====================================================
+
 async function enter() {
-  const profile = await loadMe();
+  // Load profile and questions together.
+  const [profile, questionResult] = await Promise.all([
+    loadMe(),
+    db.from("questions").select("*").order("sort_order"),
+  ]);
 
   if (!profile) {
     throw Error("الحساب ده مش متفعل. كلم المسؤول.");
   }
 
   me = profile;
-
-  await loadQuestions();
+  questions = checkResult(questionResult) || [];
 
   $("#login").classList.add("hidden");
   $("#shell").classList.remove("hidden");
 
-  $("#greeting").textContent =
-    `أهلاً يا ${me.full_name}`;
+  $("#greeting").textContent = `أهلاً يا ${me.full_name}`;
 
   $("#roleLabel").textContent =
     (roles[me.role] || me.role) +
@@ -170,29 +205,26 @@ async function enter() {
   await render();
 }
 
-// LOGIN
 const loginForm = $("#loginForm");
 
 if (loginForm) {
-  loginForm.onsubmit = async (e) => {
-    e.preventDefault();
+  loginForm.onsubmit = async (event) => {
+    event.preventDefault();
 
-    const errorEl = $("#loginError");
+    const errorElement = $("#loginError");
     const submitButton = loginForm.querySelector(
       'button[type="submit"]',
     );
 
-    errorEl.textContent = "";
+    errorElement.textContent = "";
 
     if (!configured) {
-      errorEl.textContent =
+      errorElement.textContent =
         "Please configure Supabase first.";
       return;
     }
 
-    const username = $("#username")
-      .value.trim().toLowerCase();
-
+    const username = $("#username").value.trim().toLowerCase();
     const password = $("#password").value;
 
     const isEmail =
@@ -202,92 +234,81 @@ if (loginForm) {
       /^[a-z0-9_.-]{3,32}$/.test(username);
 
     if (!isEmail && !isUsername) {
-      errorEl.textContent =
+      errorElement.textContent =
         "Please enter a valid username or email address.";
       return;
     }
 
     if (!password) {
-      errorEl.textContent =
-        "من فضلك اكتب كلمة السر";
+      errorElement.textContent = "من فضلك اكتب كلمة السر";
       return;
     }
 
-    if (submitButton) {
-      submitButton.disabled = true;
-    }
+    if (submitButton) submitButton.disabled = true;
 
     try {
-      const loginEmail = isEmail
+      const email = isEmail
         ? username
         : usernameEmail(username);
 
-      const { error } =
-        await db.auth.signInWithPassword({
-          email: loginEmail,
-          password,
-        });
+      const { error } = await db.auth.signInWithPassword({
+        email,
+        password,
+      });
 
       if (error) throw error;
 
       await enter();
+    } catch (error) {
+      console.error("Login error:", error);
 
-    } catch (err) {
-      console.error("Login error:", err);
-
-      errorEl.textContent =
+      errorElement.textContent =
         "تعذر تسجيل الدخول: " +
-        (err.message || "حاول مرة تانية");
-
+        (error.message || "حاول مرة تانية");
     } finally {
-      if (submitButton) {
-        submitButton.disabled = false;
-      }
+      if (submitButton) submitButton.disabled = false;
     }
   };
 }
 
-// LOGOUT
 async function logout() {
   try {
     await stopScanner();
     await db.auth.signOut();
 
+    renderVersion++;
     me = null;
     questions = [];
-    answers = {};
+    answers = [];
+    reportRows = [];
     tab = "home";
 
     $("#shell").classList.add("hidden");
     $("#login").classList.remove("hidden");
 
-    if ($("#password")) {
-      $("#password").value = "";
-    }
-
-    if ($("#loginError")) {
-      $("#loginError").textContent = "";
-    }
-
-  } catch (e) {
-    console.error("Logout error:", e);
+    if ($("#password")) $("#password").value = "";
+    if ($("#loginError")) $("#loginError").textContent = "";
+  } catch (error) {
+    console.error("Logout error:", error);
     toast("حصلت مشكلة أثناء تسجيل الخروج");
   }
 }
 
-// Support common logout button IDs
-document.addEventListener("click", (e) => {
-  const button = e.target.closest(
+document.addEventListener("click", (event) => {
+  const button = event.target.closest(
     "#logout, #logoutBtn, #signOut, #signOutBtn",
   );
 
   if (!button) return;
 
-  e.preventDefault();
+  event.preventDefault();
   logout();
 });
 
+// =====================================================
 // NAVIGATION
+// =====================================================
+
 function navItems() {
   if (me.role === "student") {
     return [
@@ -315,12 +336,23 @@ function navItems() {
   ];
 }
 
+async function navigate(nextTab) {
+  if (tab === nextTab) return;
+
+  tab = nextTab;
+  await render();
+}
+
 async function render() {
+  const version = ++renderVersion;
+
   await stopScanner();
+
+  if (version !== renderVersion || !me) return;
 
   const nav = navItems();
 
-  if (!nav.some((item) => item[0] === tab)) {
+  if (!nav.some(([key]) => key === tab)) {
     tab = "home";
   }
 
@@ -338,223 +370,252 @@ async function render() {
     )
     .join("");
 
-  $("#nav")
-    .querySelectorAll("button")
-    .forEach((button) => {
-      button.onclick = async () => {
-        tab = button.dataset.tab;
-        await render();
-      };
-    });
+  $("#nav").querySelectorAll("button").forEach((button) => {
+    button.onclick = () => navigate(button.dataset.tab);
+  });
 
-  const v = $("#view");
+  const view = $("#view");
 
-  v.innerHTML =
+  view.innerHTML =
     '<div class="card">ثواني بنحمّل...</div>';
 
   try {
     switch (tab) {
       case "home":
-        await home(v);
+        await home(view, version);
         break;
 
       case "form":
-        await form(v);
+        await form(view);
         break;
 
       case "history":
-        await history(v);
+        await history(view);
         break;
 
       case "students":
-        await students(v);
+        await students(view);
         break;
 
       case "reports":
-        await reports(v);
+        await reports(view);
         break;
 
       case "settings":
-        await settings(v);
+        await settings(view);
         break;
 
       case "attendance":
-        await attendancePage(v);
+        await attendancePage(view);
         break;
     }
+  } catch (error) {
+    if (version !== renderVersion) return;
 
-  } catch (e) {
-    console.error("Render error:", e);
+    console.error("Render error:", error);
 
-    v.innerHTML = card(
-      `حصلت مشكلة: ${esc(e.message)}`,
+    view.innerHTML = card(
+      `حصلت مشكلة: ${esc(error.message)}`,
       "error",
     );
   }
 }
 
-// STUDENT AND OWNER HOMEPAGE
-async function home(v) {
-  if (me.role === "student") {
-    const { data: sub, error: subError } = await db
-      .from("submissions")
-      .select("id,submitted_on,earned_points")
-      .eq("student_id", me.id)
-      .order("submitted_on", { ascending: false })
-      .limit(6);
+// =====================================================
+// STUDENT HOMEPAGE
+// =====================================================
 
-    if (subError) throw subError;
+async function studentHome(view, version) {
+  // Three requests execute in parallel.
+  const [recentResult, allResult, attendanceResult] =
+    await Promise.all([
+      db
+        .from("submissions")
+        .select("id,submitted_on,earned_points")
+        .eq("student_id", me.id)
+        .order("submitted_on", { ascending: false })
+        .limit(6),
 
-    const { data: all, error: allError } = await db
-      .from("submissions")
-      .select("earned_points")
-      .eq("student_id", me.id);
+      db
+        .from("submissions")
+        .select("earned_points")
+        .eq("student_id", me.id),
 
-    if (allError) throw allError;
+      db
+        .from("attendance")
+        .select("points_awarded")
+        .eq("student_id", me.id),
+    ]);
 
-    const { data: att, error: attError } = await db
-      .from("attendance")
-      .select("attended_on,points_awarded")
-      .eq("student_id", me.id)
-      .order("attended_on", { ascending: false });
+  const recent = checkResult(recentResult) || [];
+  const all = checkResult(allResult) || [];
+  const attendance = checkResult(attendanceResult) || [];
 
-    if (attError) throw attError;
+  if (version !== renderVersion) return;
 
-    const formPoints = (all || []).reduce(
-      (sum, item) =>
-        sum + Number(item.earned_points || 0),
-      0,
-    );
+  const formPoints = all.reduce(
+    (sum, item) => sum + number(item.earned_points),
+    0,
+  );
 
-    const attendancePoints = (att || []).reduce(
-      (sum, item) =>
-        sum + Number(item.points_awarded || 0),
-      0,
-    );
+  const attendancePoints = attendance.reduce(
+    (sum, item) => sum + number(item.points_awarded),
+    0,
+  );
 
-    const total = formPoints + attendancePoints;
+  const total = formPoints + attendancePoints;
 
-    v.innerHTML =
-      card(
-        `
-          <div class="eyebrow">مجموع نقطك</div>
-          <div class="big-number">
-            ${total.toLocaleString("ar-EG")}
-          </div>
-          <p class="muted">
-            كل يوم فرصة جديدة تعمل حاجة حلوة ✨
-          </p>
-        `,
-        "hero",
-      ) +
+  view.innerHTML =
+    card(
+      `
+        <div class="eyebrow">مجموع نقطك</div>
 
-      `<h3 class="section-title">آخر نشاط ليك</h3>` +
+        <div class="big-number">
+          ${formatPoints(total)}
+        </div>
 
-      card(
-        (sub || []).length
-          ? sub
-              .map(
-                (s) => `
-                  <div class="row item">
-                    <div>
-                      <b>${esc(s.submitted_on)}</b>
-                      <div class="tiny">متابعة اليوم</div>
-                    </div>
-                    <span class="pill">
-                      +${s.earned_points} نقطة
-                    </span>
+        <p class="muted">
+          كل يوم فرصة جديدة تعمل حاجة حلوة ✨
+        </p>
+      `,
+      "hero",
+    ) +
+
+    `<h3 class="section-title">آخر نشاط ليك</h3>` +
+
+    card(
+      recent.length
+        ? recent
+            .map(
+              (submission) => `
+                <div class="row item">
+                  <div>
+                    <b>${esc(submission.submitted_on)}</b>
+                    <div class="tiny">متابعة اليوم</div>
                   </div>
-                `,
-              )
-              .join("")
-          : '<div class="empty">لسه مفيش متابعة. يلا نبدأ!</div>',
-      ) +
 
-      `<h3 class="section-title">جبت نقطك إزاي؟</h3>` +
+                  <span class="pill">
+                    +${formatPoints(submission.earned_points)} نقطة
+                  </span>
+                </div>
+              `,
+            )
+            .join("")
+        : '<div class="empty">لسه مفيش متابعة. يلا نبدأ!</div>',
+    ) +
 
-      card(`
-        <div class="breakdown-row">
-          <span>المتابعة الروحية</span>
-          <b>${formPoints} نقطة</b>
+    `<h3 class="section-title">جبت نقطك إزاي؟</h3>` +
+
+    card(`
+      <div class="breakdown-row">
+        <span>المتابعة الروحية</span>
+        <b>${formatPoints(formPoints)} نقطة</b>
+      </div>
+
+      <div class="breakdown-row">
+        <span>حضور الاجتماع</span>
+        <b>${formatPoints(attendancePoints)} نقطة</b>
+      </div>
+    `) +
+
+    `<h3 class="section-title">كود الحضور بتاعك</h3>` +
+
+    card(`
+      <div class="qr-panel">
+        <p class="muted">
+          ورّي الكود للمسؤول يوم الجمعة
+        </p>
+
+        <div class="qr-frame" id="studentQR">
+          <span class="tiny">جاري تجهيز الكود...</span>
         </div>
-        <div class="breakdown-row">
-          <span>حضور الاجتماع</span>
-          <b>${attendancePoints} نقطة</b>
-        </div>
-      `) +
 
-      `<h3 class="section-title">كود الحضور بتاعك</h3>` +
+        <button
+          class="secondary soft-button"
+          id="downloadQR"
+          disabled
+        >
+          نزّل كود الحضور
+        </button>
 
-      card(`
-        <div class="qr-panel">
-          <p class="muted">
-            ورّي الكود للمسؤول يوم الجمعة
-          </p>
+        <p class="hint">
+          تقدر تحفظ الصورة على موبايلك
+          وتستخدمها من غير نت
+        </p>
+      </div>
+    `) +
 
-          <div class="qr-frame" id="studentQR"></div>
+    `<button class="primary full" id="goForm">
+      سجّل متابعة النهارده ←
+    </button>`;
 
-          <button
-            class="secondary soft-button"
-            id="downloadQR"
-          >
-            نزّل كود الحضور
-          </button>
+  $("#goForm").onclick = () => navigate("form");
 
-          <p class="hint">
-            تقدر تحفظ الصورة على موبايلك
-            وتستخدمها من غير نت
-          </p>
-        </div>
-      `) +
+  // QR generation no longer blocks homepage rendering.
+  renderStudentQR(version);
+}
 
-      `<button class="primary full" id="goForm">
-        سجّل متابعة النهارده ←
-      </button>`;
+// =====================================================
+// MAIN ADMIN / CLASS OWNER HOMEPAGE
+// =====================================================
 
-    $("#goForm").onclick = async () => {
-      tab = "form";
-      await render();
-    };
+async function managementHome(view, version) {
+  // Load profiles first, but count today's submissions
+  // only for the permitted student IDs.
+  const profilesResult = await db
+    .from("profiles")
+    .select("id,role,class_key");
 
-    await renderStudentQR();
+  const profiles = checkResult(profilesResult) || [];
 
-    return;
+  if (version !== renderVersion) return;
+
+  const students = profiles.filter(
+    (profile) =>
+      profile.role === "student" &&
+      (me.role === "main" ||
+        profile.class_key === me.class_key),
+  );
+
+  const studentIds = students.map((student) => student.id);
+
+  let todayCount = 0;
+
+  if (studentIds.length) {
+    // Count only submissions belonging to visible students.
+    // Batches avoid very large URL filters.
+    const batchSize = 100;
+    const batches = [];
+
+    for (let index = 0; index < studentIds.length; index += batchSize) {
+      batches.push(studentIds.slice(index, index + batchSize));
+    }
+
+    const results = await Promise.all(
+      batches.map((ids) =>
+        db
+          .from("submissions")
+          .select("id", { count: "exact", head: true })
+          .eq("submitted_on", today())
+          .in("student_id", ids),
+      ),
+    );
+
+    for (const result of results) {
+      if (result.error) throw result.error;
+      todayCount += result.count || 0;
+    }
   }
 
-  const { data: profiles, error: profilesError } =
-    await db
-      .from("profiles")
-      .select("id,role,class_key");
+  if (version !== renderVersion) return;
 
-  if (profilesError) throw profilesError;
-
-  const { data: subs, error: subsError } =
-    await db
-      .from("submissions")
-      .select("id,submitted_on");
-
-  if (subsError) throw subsError;
-
-  const visibleProfiles =
-    me.role === "main"
-      ? (profiles || [])
-      : (profiles || []).filter(
-          (p) => p.class_key === me.class_key,
-        );
-
-  const count = visibleProfiles.filter(
-    (p) => p.role === "student",
-  ).length;
-
-  const todayCount = (subs || []).filter(
-    (s) => s.submitted_on === today(),
-  ).length;
-
-  v.innerHTML =
+  view.innerHTML =
     card(
       `
         <div class="eyebrow">لوحة المتابعة</div>
+
         <h2>كل حاجة في مكان واحد.</h2>
+
         <p class="muted">
           ${
             me.role === "main"
@@ -568,20 +629,25 @@ async function home(v) {
 
     `<div class="grid">
       ${card(
-        `<strong>${count}</strong>
-         <span class="tiny">طالب</span>`,
+        `
+          <strong>${students.length}</strong>
+          <span class="tiny">طالب</span>
+        `,
         "stat",
       )}
 
       ${card(
-        `<strong>${todayCount}</strong>
-         <span class="tiny">متابعة النهارده</span>`,
+        `
+          <strong>${todayCount}</strong>
+          <span class="tiny">متابعة النهارده</span>
+        `,
         "stat",
       )}
     </div>` +
 
     card(`
       <h3>تقرير الطلبة</h3>
+
       <p class="muted">
         اختار الفصل واطبع تقرير PDF من قسم التقارير.
       </p>
@@ -591,73 +657,84 @@ async function home(v) {
       </button>
     `);
 
-  $("#goReports").onclick = async () => {
-    tab = "reports";
-    await render();
-  };
+  $("#goReports").onclick = () => navigate("reports");
 }
 
+async function home(view, version) {
+  if (me.role === "student") {
+    await studentHome(view, version);
+  } else {
+    await managementHome(view, version);
+  }
+}
+
+// =====================================================
 // DAILY SPIRITUAL FOLLOW-UP
-async function form(v) {
+// =====================================================
+
+async function form(view) {
   if (me.role !== "student") return;
 
-  const { data: existing, error: existingError } =
-    await db
-      .from("submissions")
-      .select("id")
-      .eq("student_id", me.id)
-      .eq("submitted_on", today())
-      .maybeSingle();
+  const existingResult = await db
+    .from("submissions")
+    .select("id")
+    .eq("student_id", me.id)
+    .eq("submitted_on", today())
+    .maybeSingle();
 
-  if (existingError) throw existingError;
+  const existing = checkResult(existingResult);
 
-  let old = [];
+  let oldAnswers = [];
 
   if (existing) {
-    const { data, error } = await db
-      .from("submission_answers")
-      .select("question_id,answer")
-      .eq("submission_id", existing.id);
-
-    if (error) throw error;
-    old = data || [];
+    oldAnswers =
+      checkResult(
+        await db
+          .from("submission_answers")
+          .select("question_id,answer")
+          .eq("submission_id", existing.id),
+      ) || [];
   }
 
-  answers = Object.fromEntries(
-    old.map((a) => [a.question_id, a.answer]),
+  const selectedAnswers = Object.fromEntries(
+    oldAnswers.map((answer) => [
+      answer.question_id,
+      answer.answer,
+    ]),
   );
 
   const activeQuestions = questions.filter(
-    (q) => q.active,
+    (question) => question.active,
   );
 
-  v.innerHTML = `
+  view.innerHTML = `
     <h2>متابعة النهارده</h2>
+
     <p class="muted">
       جاوب على الأسئلة براحتك 🤍
     </p>
 
     <div id="qs">
       ${activeQuestions
-        .map((q, index) =>
+        .map((question, index) =>
           card(`
             <div class="question">
               <h3>
-                ${index + 1}. ${esc(q.title)}
+                ${index + 1}. ${esc(question.title)}
               </h3>
 
               <div class="choices">
-                ${(q.options || [])
+                ${(question.options || [])
                   .map(
                     (option) => `
                       <button
                         type="button"
                         class="choice ${
-                          answers[q.id] === option
+                          selectedAnswers[question.id] === option
                             ? "selected"
                             : ""
                         }"
-                        data-q="${q.id}"
+                        data-q="${esc(question.id)}"
                         data-a="${esc(option)}"
                       >
                         ${esc(option)}
@@ -673,11 +750,7 @@ async function form(v) {
     </div>
 
     <button class="primary full" id="save">
-      ${
-        existing
-          ? "حدّث المتابعة"
-          : "احفظ المتابعة"
-      } ←
+      ${existing ? "حدّث المتابعة" : "احفظ المتابعة"} ←
     </button>
 
     <p class="tiny">
@@ -686,21 +759,20 @@ async function form(v) {
     </p>
   `;
 
-  $("#qs").onclick = (e) => {
-    const button = e.target.closest("[data-q]");
-
+  $("#qs").onclick = (event) => {
+    const button = event.target.closest("[data-q]");
     if (!button) return;
 
     const questionId = button.dataset.q;
 
-    answers[questionId] = button.dataset.a;
+    selectedAnswers[questionId] = button.dataset.a;
 
     document
       .querySelectorAll(`[data-q="${questionId}"]`)
-      .forEach((item) => {
-        item.classList.toggle(
+      .forEach((element) => {
+        element.classList.toggle(
           "selected",
-          item === button,
+          element === button,
         );
       });
   };
@@ -708,102 +780,112 @@ async function form(v) {
   $("#save").onclick = async () => {
     if (
       activeQuestions.some(
-        (q) => !answers[q.id],
+        (question) => !selectedAnswers[question.id],
       )
     ) {
       toast("جاوب على كل الأسئلة الأول");
       return;
     }
 
-    $("#save").disabled = true;
+    const button = $("#save");
+    button.disabled = true;
 
     try {
-      const payload = activeQuestions.map(
-        (q) => ({
-          question_id: q.id,
-          answer: answers[q.id],
+      const payload = activeQuestions.map((question) => ({
+        question_id: question.id,
+        answer: selectedAnswers[question.id],
+      }));
+
+      checkResult(
+        await db.rpc("save_daily_submission", {
+          p_answers: payload,
         }),
       );
-
-      const { error } = await db.rpc(
-        "save_daily_submission",
-        {
-          p_answers: payload,
-        },
-      );
-
-      if (error) throw error;
 
       toast("اتحفظت متابعتك بنجاح ✨");
 
       tab = "home";
       await render();
+    } catch (error) {
+      toast(error.message);
 
-    } catch (e) {
-      toast(e.message);
-
-      const saveButton = $("#save");
-      if (saveButton) saveButton.disabled = false;
+      if ($("#save")) $("#save").disabled = false;
     }
   };
 }
 
+// =====================================================
 // STUDENT HISTORY
-async function history(v) {
+// =====================================================
+
+async function history(view) {
   if (me.role !== "student") return;
 
-  const { data: subs, error } = await db
-    .from("submissions")
-    .select(
-      "id,submitted_on,earned_points,submission_answers(answer,question_id)",
-    )
-    .eq("student_id", me.id)
-    .order("submitted_on", { ascending: false })
-    .limit(100);
+  const submissions =
+    checkResult(
+      await db
+        .from("submissions")
+        .select(
+          "id,submitted_on,earned_points,submission_answers(answer,question_id)",
+        )
+        .eq("student_id", me.id)
+        .order("submitted_on", { ascending: false })
+        .limit(100),
+    ) || [];
 
-  if (error) throw error;
+  const questionMap = new Map(
+    questions.map((question) => [
+      String(question.id),
+      question.title,
+    ]),
+  );
 
-  v.innerHTML =
+  view.innerHTML =
     `<h2>نشاطي</h2>
      <p class="muted">كل اللي سجلته قبل كده</p>` +
 
-    ((subs || [])
-      .map((s) =>
-        card(`
-          <div class="row">
-            <b>${esc(s.submitted_on)}</b>
-            <span class="pill">
-              ${s.earned_points} نقطة
-            </span>
-          </div>
+    (submissions.length
+      ? submissions
+          .map((submission) =>
+            card(`
+              <div class="row">
+                <b>${esc(submission.submitted_on)}</b>
 
-          <div class="space"></div>
+                <span class="pill">
+                  ${formatPoints(submission.earned_points)} نقطة
+                </span>
+              </div>
 
-          ${(s.submission_answers || [])
-            .map((a) => {
-              const q = questions.find(
-                (x) => x.id === a.question_id,
-              );
+              <div class="space"></div>
 
-              return `
-                <div class="row item">
-                  <span>
-                    ${esc(q?.title || "سؤال")}
-                  </span>
-                  <b>${esc(a.answer)}</b>
-                </div>
-              `;
-            })
-            .join("")}
-        `),
-      )
-      .join("") ||
-      card('<div class="empty">لسه مفيش نشاط</div>'));
+              ${(submission.submission_answers || [])
+                .map(
+                  (answer) => `
+                    <div class="row item">
+                      <span>
+                        ${esc(
+                          questionMap.get(String(answer.question_id)) ||
+                            "سؤال",
+                        )}
+                      </span>
+
+                      <b>${esc(answer.answer)}</b>
+                    </div>
+                  `,
+                )
+                .join("")}
+            `),
+          )
+          .join("")
+      : card('<div class="empty">لسه مفيش نشاط</div>'));
 }
 
-// ACCOUNTS MANAGEMENT
-async function students(v) {
-  return renderAccounts(v, {
+// =====================================================
+// ACCOUNT MANAGEMENT
+// =====================================================
+
+async function students(view) {
+  return renderAccounts(view, {
     db,
     me,
     classes,
@@ -817,11 +899,16 @@ async function students(v) {
   });
 }
 
+// =====================================================
 // REPORTS
-async function reports(v) {
+// =====================================================
+
+async function reports(view) {
+  if (!["main", "owner"].includes(me.role)) return;
+
   const allowed = me.role === "main";
 
-  v.innerHTML =
+  view.innerHTML =
     `<h2>التقارير</h2>
      <p class="muted">
        شوف نشاط الطلبة واطبع التقرير PDF
@@ -836,7 +923,7 @@ async function reports(v) {
             allowed
               ? classSelect("reportClass")
               : `<input
-                   value="${esc(classes[me.class_key])}"
+                   value="${esc(classes[me.class_key] || "")}"
                    disabled
                  >`
           }
@@ -883,17 +970,17 @@ async function reports(v) {
       ? $("#reportClass").value
       : me.class_key;
 
+    const button = $("#loadReport");
+    button.disabled = true;
+
     try {
-      const { data, error } = await db.rpc(
-        "class_report",
-        {
+      const data = checkResult(
+        await db.rpc("class_report", {
           p_class: cls,
           p_from: from,
           p_to: to,
-        },
+        }),
       );
-
-      if (error) throw error;
 
       reportRows = data || [];
 
@@ -913,6 +1000,7 @@ async function reports(v) {
 
         <div class="print-only">
           <h2>تقرير المتابعة الروحية</h2>
+
           <p>
             ${esc(classes[cls] || "كل الفصول")}
             — من ${esc(from)} إلى ${esc(to)}
@@ -934,22 +1022,18 @@ async function reports(v) {
               ${
                 reportRows
                   .map(
-                    (r) => `
+                    (row) => `
                       <tr>
-                        <td>${esc(r.full_name)}</td>
-                        <td>
-                          ${esc(classes[r.class_key])}
-                        </td>
-                        <td>${Number(r.days_count)}</td>
-                        <td>${Number(r.total_points)}</td>
+                        <td>${esc(row.full_name)}</td>
+                        <td>${esc(classes[row.class_key] || "")}</td>
+                        <td>${number(row.days_count)}</td>
+                        <td>${formatPoints(row.total_points)}</td>
                       </tr>
                     `,
                   )
                   .join("") ||
                 `<tr>
-                   <td colspan="4">
-                     مفيش بيانات
-                   </td>
+                   <td colspan="4">مفيش بيانات</td>
                  </tr>`
               }
             </tbody>
@@ -957,21 +1041,25 @@ async function reports(v) {
         </div>
       `);
 
-      $("#printReport").onclick = () =>
-        window.print();
-
-    } catch (e) {
-      toast(e.message);
+      $("#printReport").onclick = () => window.print();
+    } catch (error) {
+      toast(error.message);
+    } finally {
+      if ($("#loadReport")) $("#loadReport").disabled = false;
     }
   };
 }
 
+// =====================================================
 // MAIN ADMIN SETTINGS
-async function settings(v) {
+// =====================================================
+
+async function settings(view) {
   if (me.role !== "main") return;
 
-  v.innerHTML =
+  view.innerHTML =
     `<h2>إعدادات النقط</h2>
+
      <p class="muted">
        غيّر النقط لكل إجابة.
        التغيير بيأثر على المتابعات الجديدة،
@@ -999,29 +1087,31 @@ async function settings(v) {
     `) +
 
     questions
-      .map((q) =>
+      .map((question) =>
         card(`
           <div class="row">
-            <b>${esc(q.title)}</b>
+            <b>${esc(question.title)}</b>
+
             <span class="pill">
-              ${q.active ? "مفعّل" : "متوقف"}
+              ${question.active ? "مفعّل" : "متوقف"}
             </span>
           </div>
 
           <div class="stack" style="margin-top:12px">
-            ${(q.options || [])
+            ${(question.options || [])
               .map(
                 (option) => `
                   <label>
                     ${esc(option)}
+
                     <input
                       type="number"
                       min="0"
                       max="10000"
                       step="1"
-                      data-id="${q.id}"
+                      data-id="${esc(question.id)}"
                       data-option="${esc(option)}"
-                      value="${Number(q.points?.[option] || 0)}"
+                      value="${number(question.points?.[option])}"
                     >
                   </label>
                 `,
@@ -1031,10 +1121,11 @@ async function settings(v) {
             <label>
               <input
                 type="checkbox"
-                data-active="${q.id}"
-                ${q.active ? "checked" : ""}
+                data-active="${esc(question.id)}"
+                ${question.active ? "checked" : ""}
                 style="width:auto;min-height:auto"
               >
+
               السؤال ده يظهر للطلبة
             </label>
           </div>
@@ -1046,19 +1137,18 @@ async function settings(v) {
       احفظ التعديلات ←
     </button>`;
 
-  const {
-    data: attendanceSetting,
-    error: settingError,
-  } = await db
-    .from("attendance_settings")
-    .select("points")
-    .eq("id", 1)
-    .single();
+  const attendanceSetting = checkResult(
+    await db
+      .from("attendance_settings")
+      .select("points")
+      .eq("id", 1)
+      .single(),
+  );
 
-  if (settingError) throw settingError;
-
-  $("#attendancePointsSetting").value =
-    attendanceSetting.points;
+  if ($("#attendancePointsSetting")) {
+    $("#attendancePointsSetting").value =
+      attendanceSetting.points;
+  }
 
   $("#saveSettings").onclick = async () => {
     const button = $("#saveSettings");
@@ -1077,15 +1167,16 @@ async function settings(v) {
         throw Error("راجع نقط الحضور");
       }
 
-      const updates = questions.map((q) => {
+      const updates = questions.map((question) => {
         const points = {};
 
         document
-          .querySelectorAll(`[data-id="${q.id}"]`)
+          .querySelectorAll(`[data-id="${question.id}"]`)
           .forEach((input) => {
             const value = Number(input.value);
 
             if (
+              input.value.trim() === "" ||
               !Number.isInteger(value) ||
               value < 0 ||
               value > 10000
@@ -1098,50 +1189,52 @@ async function settings(v) {
             points[input.dataset.option] = value;
           });
 
-        const active = document.querySelector(
-          `[data-active="${q.id}"]`,
-        ).checked;
+        const activeInput = document.querySelector(
+          `[data-active="${question.id}"]`,
+        );
 
         return {
-          id: q.id,
+          id: question.id,
           points,
-          active,
+          active: !!activeInput?.checked,
         };
       });
 
-      const { error: attendanceError } = await db
-        .from("attendance_settings")
-        .update({ points: attendanceValue })
-        .eq("id", 1);
+      checkResult(
+        await db
+          .from("attendance_settings")
+          .update({ points: attendanceValue })
+          .eq("id", 1),
+      );
 
-      if (attendanceError) throw attendanceError;
-
+      // Keep updates sequential to preserve existing behavior.
       for (const update of updates) {
-        const { error } = await db
-          .from("questions")
-          .update({
-            points: update.points,
-            active: update.active,
-          })
-          .eq("id", update.id);
-
-        if (error) throw error;
+        checkResult(
+          await db
+            .from("questions")
+            .update({
+              points: update.points,
+              active: update.active,
+            })
+            .eq("id", update.id),
+        );
       }
 
       await loadQuestions();
 
       toast("الإعدادات اتحفظت");
-
-    } catch (e) {
-      toast(e.message);
-
+    } catch (error) {
+      toast(error.message);
     } finally {
       button.disabled = false;
     }
   };
 }
 
+// =====================================================
 // EXTERNAL SCRIPT LOADER
+// =====================================================
+
 const loadingScripts = new Map();
 
 async function ensureScript(url, globalName) {
@@ -1161,9 +1254,7 @@ async function ensureScript(url, globalName) {
       if (window[globalName]) {
         resolve();
       } else {
-        reject(
-          Error("أداة الكود اتحملت لكن مش شغالة"),
-        );
+        reject(Error("أداة الكود اتحملت لكن مش شغالة"));
       }
     };
 
@@ -1184,17 +1275,22 @@ async function ensureScript(url, globalName) {
 
   try {
     await promise;
-  } catch (e) {
+  } catch (error) {
     loadingScripts.delete(url);
-    throw e;
+    throw error;
   }
 }
 
+// =====================================================
 // STUDENT QR CODE
-async function renderStudentQR() {
-  const el = $("#studentQR");
+// =====================================================
 
-  if (!el || !me) return;
+async function renderStudentQR(version = renderVersion) {
+  const element = $("#studentQR");
+
+  if (!element || !me) return;
+
+  const studentId = me.id;
 
   try {
     await ensureScript(
@@ -1202,10 +1298,24 @@ async function renderStudentQR() {
       "QRCode",
     );
 
-    el.replaceChildren();
+    if (
+      version !== renderVersion ||
+      !me ||
+      me.id !== studentId
+    ) {
+      return;
+    }
 
-    new window.QRCode(el, {
-      text: `TALMAZA:${me.id}`,
+    const currentElement = $("#studentQR");
+
+    if (!currentElement || currentElement !== element) {
+      return;
+    }
+
+    element.replaceChildren();
+
+    new window.QRCode(element, {
+      text: `TALMAZA:${studentId}`,
       width: 210,
       height: 210,
       correctLevel: window.QRCode.CorrectLevel.M,
@@ -1214,16 +1324,18 @@ async function renderStudentQR() {
     const downloadButton = $("#downloadQR");
 
     if (downloadButton) {
+      downloadButton.disabled = false;
+
       downloadButton.onclick = () => {
-        const canvas = el.querySelector("canvas");
-        const img = el.querySelector("img");
+        const canvas = element.querySelector("canvas");
+        const image = element.querySelector("img");
 
         let imageUrl = "";
 
         if (canvas) {
           imageUrl = canvas.toDataURL("image/png");
-        } else if (img) {
-          imageUrl = img.src;
+        } else if (image) {
+          imageUrl = image.src;
         }
 
         if (!imageUrl) {
@@ -1241,16 +1353,24 @@ async function renderStudentQR() {
         link.remove();
       };
     }
+  } catch (error) {
+    console.error("QR error:", error);
 
-  } catch (e) {
-    console.error("QR error:", e);
+    if (version !== renderVersion) return;
 
-    el.textContent =
-      "تعذر إنشاء كود الحضور: " + e.message;
+    const currentElement = $("#studentQR");
+
+    if (currentElement === element) {
+      element.textContent =
+        "تعذر إنشاء كود الحضور: " + error.message;
+    }
   }
 }
 
+// =====================================================
 // OFFLINE ATTENDANCE STORAGE
+// =====================================================
+
 const queueKey = () =>
   `talmaza-attendance-${me?.id || "none"}`;
 
@@ -1261,7 +1381,6 @@ function pendingQueue() {
     );
 
     return Array.isArray(stored) ? stored : [];
-
   } catch {
     return [];
   }
@@ -1274,15 +1393,19 @@ function storeQueue(queue) {
   );
 }
 
-function cairoFriday() {
-  const date = today();
+function updatePendingUI() {
+  const element = $("#pendingAttendance");
 
-  return (
-    new Date(`${date}T12:00:00Z`).getUTCDay() === 5
-  );
+  if (!element) return;
+
+  element.textContent =
+    `${pendingQueue().length} حضور مستني المزامنة`;
 }
 
+// =====================================================
 // QR SCANNER
+// =====================================================
+
 async function stopScanner() {
   if (!scanner) return;
 
@@ -1304,21 +1427,21 @@ async function queueScan(raw) {
   scanBusy = true;
 
   try {
+    if (!me || !["owner", "main"].includes(me.role)) {
+      throw Error("مش مسموح بتسجيل الحضور");
+    }
+
     const match =
       /^TALMAZA:([0-9a-f-]{36})$/i.exec(
         String(raw).trim(),
       );
 
     if (!match) {
-      throw Error(
-        "الكود ده مش تابع لمتابعتي",
-      );
+      throw Error("الكود ده مش تابع لمتابعتي");
     }
 
     if (!cairoFriday()) {
-      throw Error(
-        "الحضور بيتسجل يوم الجمعة بس",
-      );
+      throw Error("الحضور بيتسجل يوم الجمعة بس");
     }
 
     const studentId = match[1].toLowerCase();
@@ -1333,32 +1456,27 @@ async function queueScan(raw) {
     );
 
     if (duplicate) {
-      toast(
-        "الطالب ده متسجل بالفعل ومستني المزامنة",
-      );
+      toast("الطالب ده متسجل بالفعل ومستني المزامنة");
       return;
     }
 
     queue.push({
       student_id: studentId,
       attended_on: date,
-      client_recorded_at:
-        new Date().toISOString(),
+      client_recorded_at: new Date().toISOString(),
     });
 
     storeQueue(queue);
 
     toast("اتحفظ الحضور على الموبايل");
-
     updatePendingUI();
 
     if (navigator.onLine) {
-      await syncAttendance();
+      // Sync in background; scanner remains responsive.
+      syncAttendance();
     }
-
-  } catch (e) {
-    toast(e.message);
-
+  } catch (error) {
+    toast(error.message);
   } finally {
     setTimeout(() => {
       scanBusy = false;
@@ -1366,7 +1484,10 @@ async function queueScan(raw) {
   }
 }
 
+// =====================================================
 // ATTENDANCE SYNCHRONIZATION
+// =====================================================
+
 async function syncAttendance() {
   if (
     syncingAttendance ||
@@ -1378,88 +1499,96 @@ async function syncAttendance() {
     return;
   }
 
-  const queue = pendingQueue();
+  const initialQueue = pendingQueue();
 
-  if (!queue.length) {
+  if (!initialQueue.length) {
     updatePendingUI();
     return;
   }
 
   syncingAttendance = true;
 
-  const remaining = [];
   let successCount = 0;
+  let failedCount = 0;
 
   try {
-    for (const item of queue) {
+    // Process one item at a time so successful records
+    // can be removed immediately after server confirmation.
+    for (const item of initialQueue) {
       try {
-        const { error } = await db.rpc(
-          "record_attendance",
-          {
+        checkResult(
+          await db.rpc("record_attendance", {
             p_student_id: item.student_id,
             p_attended_on: item.attended_on,
             p_client_recorded_at:
               item.client_recorded_at,
-          },
+          }),
         );
 
-        if (error) throw error;
+        const currentQueue = pendingQueue();
 
+        const remaining = currentQueue.filter(
+          (queued) =>
+            !(
+              queued.student_id === item.student_id &&
+              queued.attended_on === item.attended_on &&
+              queued.client_recorded_at ===
+                item.client_recorded_at
+            ),
+        );
+
+        storeQueue(remaining);
         successCount++;
+      } catch (error) {
+        failedCount++;
 
-      } catch (e) {
-        remaining.push({
-          ...item,
-          error: e.message,
-        });
+        const currentQueue = pendingQueue();
+
+        const updated = currentQueue.map((queued) =>
+          queued.student_id === item.student_id &&
+          queued.attended_on === item.attended_on &&
+          queued.client_recorded_at ===
+            item.client_recorded_at
+            ? { ...queued, error: error.message }
+            : queued,
+        );
+
+        storeQueue(updated);
       }
+
+      updatePendingUI();
     }
-
-    storeQueue(remaining);
-
-    updatePendingUI();
 
     if (successCount) {
-      toast(
-        `اتزامن ${successCount} حضور بنجاح`,
-      );
+      toast(`اتزامن ${successCount} حضور بنجاح`);
     }
 
-    if (remaining.length) {
+    if (failedCount) {
       toast(
-        `${remaining.length} حضور لسه مستني المزامنة أو المراجعة`,
+        `${failedCount} حضور لسه مستني المزامنة أو المراجعة`,
       );
     }
-
   } finally {
     syncingAttendance = false;
   }
 }
 
-function updatePendingUI() {
-  const el = $("#pendingAttendance");
+// =====================================================
+// ATTENDANCE PAGE
+// =====================================================
 
-  if (!el) return;
+async function attendancePage(view) {
+  if (!["owner", "main"].includes(me.role)) return;
 
-  el.textContent =
-    `${pendingQueue().length} حضور مستني المزامنة`;
-}
+  view.innerHTML = `
+    <h2>تسجيل الحضور</h2>
 
-// OWNER ATTENDANCE PAGE
-async function attendancePage(v) {
-  if (!["owner", "main"].includes(me.role)) {
-    return;
-  }
+    <p class="muted">
+      اجتماع الجمعة • من ٣ لـ ٥،
+      والتسجيل متاح بعد ٥ كمان
+    </p>
 
-  v.innerHTML =
-    `<h2>تسجيل الحضور</h2>
-
-     <p class="muted">
-       اجتماع الجمعة • من ٣ لـ ٥،
-       والتسجيل متاح بعد ٥ كمان
-     </p>` +
-
-    card(`
+    ${card(`
       <h3>امسح كود الطالب</h3>
 
       <div
@@ -1473,22 +1602,16 @@ async function attendancePage(v) {
         على الجهاز لحد ما النت يرجع.
       </p>
 
-      <button
-        id="startScan"
-        class="primary full"
-      >
+      <button id="startScan" class="primary full">
         افتح الكاميرا
       </button>
 
-      <button
-        id="stopScan"
-        class="secondary soft-button"
-      >
+      <button id="stopScan" class="secondary soft-button">
         اقفل الكاميرا
       </button>
-    `) +
+    `)}
 
-    card(`
+    ${card(`
       <h3>المزامنة</h3>
 
       <p
@@ -1496,10 +1619,7 @@ async function attendancePage(v) {
         id="pendingAttendance"
       ></p>
 
-      <button
-        id="syncNow"
-        class="secondary soft-button"
-      >
+      <button id="syncNow" class="secondary soft-button">
         زامن الحضور دلوقتي
       </button>
 
@@ -1507,15 +1627,18 @@ async function attendancePage(v) {
         متعملش تسجيل خروج أو تمسح
         بيانات المتصفح قبل ما العدد يبقى صفر.
       </p>
-    `);
+    `)}
+  `;
 
   updatePendingUI();
 
   $("#syncNow").onclick = syncAttendance;
-
   $("#stopScan").onclick = stopScanner;
 
   $("#startScan").onclick = async () => {
+    const button = $("#startScan");
+    button.disabled = true;
+
     try {
       await ensureScript(
         "https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js",
@@ -1524,9 +1647,7 @@ async function attendancePage(v) {
 
       if (scanner) return;
 
-      scanner = new window.Html5Qrcode(
-        "qrScanner",
-      );
+      scanner = new window.Html5Qrcode("qrScanner");
 
       await scanner.start(
         { facingMode: "environment" },
@@ -1539,15 +1660,18 @@ async function attendancePage(v) {
         },
         queueScan,
       );
-
-    } catch (e) {
-      console.error("Scanner error:", e);
+    } catch (error) {
+      console.error("Scanner error:", error);
 
       toast(
         "الكاميرا مش متاحة: تأكد من الاتصال والسماح بالكاميرا",
       );
 
       await stopScanner();
+    } finally {
+      if ($("#startScan")) {
+        $("#startScan").disabled = false;
+      }
     }
   };
 
@@ -1556,9 +1680,12 @@ async function attendancePage(v) {
   }
 }
 
+// =====================================================
 // PASSWORD VISIBILITY
-document.addEventListener("click", (e) => {
-  const button = e.target.closest(
+// =====================================================
+
+document.addEventListener("click", (event) => {
+  const button = event.target.closest(
     "[data-toggle-password]",
   );
 
@@ -1572,45 +1699,45 @@ document.addEventListener("click", (e) => {
 
   const isHidden = input.type === "password";
 
-  input.type = isHidden
-    ? "text"
-    : "password";
+  input.type = isHidden ? "text" : "password";
 
   button.setAttribute(
     "aria-label",
-    isHidden
-      ? "إخفاء كلمة السر"
-      : "إظهار كلمة السر",
+    isHidden ? "إخفاء كلمة السر" : "إظهار كلمة السر",
   );
 
-  button.textContent = isHidden
-    ? "◌"
-    : "◉";
+  button.textContent = isHidden ? "◌" : "◉";
 });
 
+// =====================================================
 // NETWORK RESTORED
+// =====================================================
+
 window.addEventListener("online", () => {
-  if (
-    me &&
-    ["owner", "main"].includes(me.role)
-  ) {
+  if (me && ["owner", "main"].includes(me.role)) {
     syncAttendance();
   }
 });
 
+// =====================================================
 // SERVICE WORKER
+// =====================================================
+
 if (
   "serviceWorker" in navigator &&
   location.protocol !== "file:"
 ) {
   navigator.serviceWorker
     .register("./sw.js")
-    .catch((e) => {
-      console.warn("Service worker:", e);
+    .catch((error) => {
+      console.warn("Service worker:", error);
     });
 }
 
+// =====================================================
 // APPLICATION INITIALIZATION
+// =====================================================
+
 (async () => {
   if (!configured) {
     if ($("#loginError")) {
@@ -1631,12 +1758,9 @@ if (
     if (session) {
       await enter();
     }
+  } catch (error) {
+    console.error("Session restore error:", error);
 
-  } catch (e) {
-    console.error("Session restore error:", e);
-
-    toast(
-      "مقدرناش نفتح الحساب. جرّب تدخل تاني",
-    );
+    toast("مقدرناش نفتح الحساب. جرّب تدخل تاني");
   }
 })();
