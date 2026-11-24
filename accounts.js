@@ -109,13 +109,35 @@ export async function renderAccounts(v, {
           <select id="pointsStudent" required></select>
         </label>
 
-        <label>
-          نوع العملية
-          <select id="pointsAction" required>
-            <option value="add">إضافة نقط (+)</option>
-            <option value="deduct">خصم نقط (-)</option>
-          </select>
-        </label>
+        <div>
+          <label>نوع العملية</label>
+
+          <div
+            class="points-action-buttons"
+            role="group"
+            aria-label="نوع تعديل النقط"
+          >
+            <button
+              type="button"
+              id="pointsPlus"
+              class="points-action plus selected"
+              aria-pressed="true"
+            >
+              <span class="action-symbol">+</span>
+              Plus
+            </button>
+
+            <button
+              type="button"
+              id="pointsMinus"
+              class="points-action minus"
+              aria-pressed="false"
+            >
+              <span class="action-symbol">−</span>
+              Minus
+            </button>
+          </div>
+        </div>
 
         <label>
           عدد النقط
@@ -153,6 +175,7 @@ export async function renderAccounts(v, {
     ${card(`
       <div class="row">
         <h3>سجل تعديلات النقط</h3>
+
         <button
           type="button"
           class="secondary"
@@ -296,6 +319,45 @@ export async function renderAccounts(v, {
   updateStudentOptions();
 
   // ============================================
+  // PLUS / MINUS BUTTONS
+  // ============================================
+
+  let selectedAction = "add";
+
+  const plusButton = $("#pointsPlus");
+  const minusButton = $("#pointsMinus");
+
+  function selectAction(action) {
+    selectedAction = action;
+
+    const plusSelected = action === "add";
+    const minusSelected = action === "deduct";
+
+    plusButton.classList.toggle(
+      "selected",
+      plusSelected
+    );
+
+    minusButton.classList.toggle(
+      "selected",
+      minusSelected
+    );
+
+    plusButton.setAttribute(
+      "aria-pressed",
+      String(plusSelected)
+    );
+
+    minusButton.setAttribute(
+      "aria-pressed",
+      String(minusSelected)
+    );
+  }
+
+  plusButton.onclick = () => selectAction("add");
+  minusButton.onclick = () => selectAction("deduct");
+
+  // ============================================
   // ADJUSTMENT HISTORY
   // ============================================
 
@@ -305,6 +367,7 @@ export async function renderAccounts(v, {
 
   async function loadAdjustmentHistory() {
     const container = $("#adjustmentsHistory");
+
     if (!container) return;
 
     container.innerHTML =
@@ -313,7 +376,9 @@ export async function renderAccounts(v, {
     try {
       const { data, error } = await db
         .from("point_adjustments")
-        .select("id,student_id,adjusted_by,points,reason,created_at")
+        .select(
+          "id,student_id,adjusted_by,points,reason,created_at"
+        )
         .order("created_at", { ascending: false })
         .limit(50);
 
@@ -327,7 +392,9 @@ export async function renderAccounts(v, {
 
       container.innerHTML = rows.length
         ? rows.map(item => {
-            const student = studentMap.get(item.student_id);
+            const student = studentMap.get(
+              item.student_id
+            );
 
             const amount = Number(item.points);
             const sign = amount > 0 ? "+" : "";
@@ -344,7 +411,9 @@ export async function renderAccounts(v, {
                   <b>${esc(student.full_name)}</b>
 
                   <div class="tiny">
-                    ${esc(classNames[student.class_key] || "")}
+                    ${esc(
+                      classNames[student.class_key] || ""
+                    )}
                     • ${esc(date)}
                   </div>
 
@@ -364,7 +433,10 @@ export async function renderAccounts(v, {
         : '<div class="empty">لسه مفيش تعديلات نقط</div>';
 
     } catch (err) {
-      console.error("Adjustment history error:", err);
+      console.error(
+        "Adjustment history error:",
+        err
+      );
 
       if (container.isConnected) {
         container.innerHTML = `
@@ -377,9 +449,9 @@ export async function renderAccounts(v, {
     }
   }
 
-  $("#refreshAdjustments").onclick = loadAdjustmentHistory;
+  $("#refreshAdjustments").onclick =
+    loadAdjustmentHistory;
 
-  // Load history without blocking the page.
   loadAdjustmentHistory();
 
   // ============================================
@@ -388,14 +460,19 @@ export async function renderAccounts(v, {
 
   const adjustForm = $("#adjustPointsForm");
 
-  adjustForm.onsubmit = async (e) => {
+  adjustForm.onsubmit = async e => {
     e.preventDefault();
 
     const studentId = pointsStudent.value;
-    const action = $("#pointsAction").value;
-    const rawAmount = $("#pointsAmount").value.trim();
+    const action = selectedAction;
+
+    const rawAmount =
+      $("#pointsAmount").value.trim();
+
     const amount = Number(rawAmount);
-    const reason = $("#pointsReason").value.trim();
+
+    const reason =
+      $("#pointsReason").value.trim();
 
     if (!studentMap.has(studentId)) {
       toast("اختار طالب صحيح");
@@ -408,7 +485,9 @@ export async function renderAccounts(v, {
       amount < 1 ||
       amount > 10000
     ) {
-      toast("عدد النقط لازم يكون من ١ إلى ١٠٠٠٠");
+      toast(
+        "عدد النقط لازم يكون من ١ إلى ١٠٠٠٠"
+      );
       return;
     }
 
@@ -424,10 +503,11 @@ export async function renderAccounts(v, {
     const student = studentMap.get(studentId);
 
     const confirmed = window.confirm(
-      `تأكيد ${action === "add" ? "إضافة" : "خصم"} ` +
-      `${amount} نقطة ` +
-      `${action === "add" ? "للطالب" : "من الطالب"} ` +
-      `${student.full_name}؟`
+      `تأكيد ${
+        action === "add" ? "إضافة" : "خصم"
+      } ${amount} نقطة ${
+        action === "add" ? "للطالب" : "من الطالب"
+      } ${student.full_name}؟`
     );
 
     if (!confirmed) return;
@@ -459,7 +539,10 @@ export async function renderAccounts(v, {
       await loadAdjustmentHistory();
 
     } catch (err) {
-      console.error("Points adjustment error:", err);
+      console.error(
+        "Points adjustment error:",
+        err
+      );
 
       toast(
         "تعذر تعديل النقط: " +
@@ -469,7 +552,8 @@ export async function renderAccounts(v, {
     } finally {
       if (button.isConnected) {
         button.disabled = false;
-        button.textContent = "حفظ تعديل النقط ←";
+        button.textContent =
+          "حفظ تعديل النقط ←";
       }
     }
   };
@@ -482,7 +566,7 @@ export async function renderAccounts(v, {
 
   if (!form) return;
 
-  form.onsubmit = async (e) => {
+  form.onsubmit = async e => {
     e.preventDefault();
 
     const btn = form.querySelector(
@@ -492,7 +576,8 @@ export async function renderAccounts(v, {
     const username = form.elements.username
       .value.trim().toLowerCase();
 
-    const password = form.elements.password.value;
+    const password =
+      form.elements.password.value;
 
     const full_name = form.elements.full_name
       .value.trim();
@@ -518,7 +603,9 @@ export async function renderAccounts(v, {
     }
 
     if (password.length < 8) {
-      toast("كلمة السر لازم تكون ٨ حروف على الأقل");
+      toast(
+        "كلمة السر لازم تكون ٨ حروف على الأقل"
+      );
       return;
     }
 
@@ -527,7 +614,11 @@ export async function renderAccounts(v, {
       return;
     }
 
-    if (!["first", "second", "third"].includes(class_key)) {
+    if (
+      !["first", "second", "third"].includes(
+        class_key
+      )
+    ) {
       toast("اختار فصل صحيح");
       return;
     }
@@ -537,22 +628,26 @@ export async function renderAccounts(v, {
 
     try {
       const { data, error } =
-        await db.functions.invoke("create-user", {
-          body: {
-            username,
-            password,
-            full_name,
-            role,
-            class_key
+        await db.functions.invoke(
+          "create-user",
+          {
+            body: {
+              username,
+              password,
+              full_name,
+              role,
+              class_key
+            }
           }
-        });
+        );
 
       if (error) {
         let message = error.message;
 
         if (error.context) {
           try {
-            const details = await error.context.json();
+            const details =
+              await error.context.json();
 
             message =
               details.error ||
@@ -575,7 +670,10 @@ export async function renderAccounts(v, {
       await render();
 
     } catch (err) {
-      console.error("Account creation error:", err);
+      console.error(
+        "Account creation error:",
+        err
+      );
 
       toast(
         "مقدرناش ننشئ الحساب: " +
@@ -583,7 +681,8 @@ export async function renderAccounts(v, {
       );
 
       btn.disabled = false;
-      btn.textContent = "إنشاء الحساب ←";
+      btn.textContent =
+        "إنشاء الحساب ←";
     }
   };
 }
