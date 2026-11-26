@@ -808,6 +808,8 @@ async function form(view, version) {
 
       toast("اتحفظت متابعتك بنجاح ✨");
 
+      window.TalmazaSticker?.show();
+
       tab = "home";
       await render();
     } catch (error) {
